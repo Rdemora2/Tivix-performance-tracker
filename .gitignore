@@ -1,0 +1,248 @@
+# ==============================================================================
+# ARQUIVOS DE AMBIENTE E CONFIGURAÇÃO
+# ==============================================================================
+.env
+.env.local
+.env.*.local
+
+# ==============================================================================
+# GO (BACK-END)
+# ==============================================================================
+# Go binaries
+back-end/*.exe
+back-end/*.exe~
+back-end/*.dll
+back-end/*.so
+back-end/*.dylib
+
+# Test binary, built with `go test -c`
+back-end/*.test
+
+# Output of the go coverage tool
+back-end/*.out
+
+# Go workspace file
+go.work
+
+# Dependency directories
+back-end/vendor/
+
+# ==============================================================================
+# NODE.JS / REACT (FRONT-END)
+# ==============================================================================
+# Dependencies
+front-end/node_modules/
+front-end/bower_components/
+
+# Build outputs
+front-end/build/
+front-end/dist/
+front-end/out/
+
+# Production builds
+front-end/[Bb]in/
+front-end/[Oo]bj/
+front-end/[Dd]ebug/
+front-end/[Dd]ebugPublic/
+front-end/[Rr]elease/
+front-end/[Rr]eleases/
+front-end/x64/
+front-end/x86/
+front-end/bld/
+
+# ==============================================================================
+# IDES E EDITORES
+# ==============================================================================
+# Visual Studio Code
+.vscode/
+
+# Visual Studio
+.vs/
+front-end/*.suo
+front-end/*.user
+front-end/*.userosscache
+front-end/*.sln.docstates
+front-end/*.userprefs
+
+# IntelliJ / WebStorm
+.idea/
+
+# Vim
+*.swp
+*.swo
+*~
+
+# ==============================================================================
+# LOGS E DADOS DE RUNTIME
+# ==============================================================================
+*.log
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Test results
+front-end/[Tt]est[Rr]esult*/
+front-end/[Bb]uild[Ll]og.*
+front-end/TestResult.xml
+front-end/*.VisualState.xml
+
+# ==============================================================================
+# ARQUIVOS TEMPORÁRIOS E CACHE
+# ==============================================================================
+# Temporary folders
+tmp/
+temp/
+
+# Cache files
+front-end/.sass-cache/
+front-end/*.cache
+front-end/[Cc]ache
+front-end/.ntvs_analysis.dat
+
+# ==============================================================================
+# ARQUIVOS GERADOS PELO SISTEMA OPERACIONAL
+# ==============================================================================
+# macOS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+
+# Windows
+ehthumbs.db
+Thumbs.db
+
+# ==============================================================================
+# ARQUIVOS DE BUILD E DEPLOY
+# ==============================================================================
+# Publishing
+front-end/publish/
+front-end/*.[Pp]ublish.xml
+front-end/*.azurePubxml
+front-end/*.pubxml
+front-end/*.publishproj
+front-end/*.publishsettings
+
+# Package files
+front-end/*.nupkg
+front-end/**/packages/*
+!front-end/**/packages/build/
+
+# Windows Azure Build Output
+front-end/csx/
+front-end/*.build.csdef
+
+# Windows Store app package directory
+front-end/AppPackages/
+
+# ==============================================================================
+# ARQUIVOS DE PROJETO ESPECÍFICOS
+# ==============================================================================
+# Visual Studio profiler
+front-end/*.psess
+front-end/*.vsp
+front-end/*.vspx
+
+# Visual C++ files
+front-end/ipch/
+front-end/*.aps
+front-end/*.ncb
+front-end/*.opensdf
+front-end/*.sdf
+front-end/*.cachefile
+
+# Compiled files
+front-end/*_i.c
+front-end/*_p.c
+front-end/*_i.h
+front-end/*.ilk
+front-end/*.meta
+front-end/*.obj
+front-end/*.pch
+front-end/*.pdb
+front-end/*.pgc
+front-end/*.pgd
+front-end/*.rsp
+front-end/*.sbr
+front-end/*.tlb
+front-end/*.tli
+front-end/*.tlh
+front-end/*.tmp
+front-end/*.tmp_proj
+front-end/*.vspscc
+front-end/*.vssscc
+front-end/.builds
+front-end/*.pidb
+front-end/*.svclog
+front-end/*.scc
+
+# SQL Server files
+front-end/*.mdf
+front-end/*.ldf
+
+# Business Intelligence projects
+front-end/*.rdl.data
+front-end/*.bim.layout
+front-end/*.bim_*.settings
+
+# Microsoft Fakes
+front-end/FakesAssemblies/
+
+# Backup files
+front-end/_UpgradeReport_Files/
+front-end/Backup*/
+front-end/UpgradeLog*.XML
+front-end/UpgradeLog*.htm
+
+# ReSharper
+front-end/_ReSharper*/
+front-end/*.[Rr]e[Ss]harper
+front-end/*.DotSettings.user
+
+# TeamCity
+front-end/_TeamCity*
+
+# DotCover
+front-end/*.dotCover
+
+# NCrunch
+front-end/_NCrunch_*
+front-end/.*crunch*.local.xml
+
+# MightyMoose
+front-end/*.mm.*
+front-end/AutoTest.Net/
+
+# DocProject
+front-end/DocProject/buildhelp/
+front-end/DocProject/Help/*.HxT
+front-end/DocProject/Help/*.HxC
+front-end/DocProject/Help/*.hhc
+front-end/DocProject/Help/*.hhk
+front-end/DocProject/Help/*.hhp
+front-end/DocProject/Help/Html2
+front-end/DocProject/Help/html
+
+# Click-Once directory
+front-end/publish/
+
+# RIA/Silverlight projects
+front-end/Generated_Code/
+
+# Visual Studio 6
+front-end/*.plg
+front-end/*.opt
+
+# ==============================================================================
+# DOCKER
+# ==============================================================================
+# Docker volumes
+.docker/
+
+# ==============================================================================
+# NGINX
+# ==============================================================================
+# Nginx logs
+nginx/*.log

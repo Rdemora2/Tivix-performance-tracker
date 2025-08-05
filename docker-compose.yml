@@ -1,0 +1,40 @@
+services:
+  api:
+    build:
+      context: ./back-end
+      dockerfile: Dockerfile
+    container_name: tpt-api
+    restart: unless-stopped
+    env_file: ./back-end/.env
+    expose:
+      - "8080"
+    networks:
+      - internal-services
+
+  nginx:
+    build:
+      context: .
+      dockerfile: ./nginx/Dockerfile
+    container_name: tpt-nginx
+    restart: unless-stopped
+    env_file:
+      - ./.env
+    networks:
+      - web
+      - internal-services
+    depends_on:
+      - api
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.tpt-router.rule=${TRAEFIK_HOST_RULE}"
+      - "traefik.http.routers.tpt-router.entrypoints=websecure"
+      - "traefik.http.routers.tpt-router.tls.certresolver=myresolver"
+      - "traefik.http.services.tpt-service.loadbalancer.server.port=80"
+      - "traefik.docker.network=web"
+
+networks:
+  web:
+    external: true
+  internal-services:
+    name: internal-services
+    external: true

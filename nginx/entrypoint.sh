@@ -1,3 +1,4 @@
+#!/bin/sh
 
 # Garante que o script pare se houver um erro
 set -e

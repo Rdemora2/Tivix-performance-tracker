@@ -8,15 +8,17 @@ Esta API representa uma implementação moderna de microserviços em Go, utiliza
 
 ## 🏗️ Arquitetura de Software
 
-### Padrão Arquitetural
+A aplicação segue o padrão **Clean**
 
-A aplicação segue o padrão **Clean Architecture** com separação clara de responsabilidades:
+## 🚀 Execução Local
+
+### Desenvolvimento\*\* com separação clara de responsabilidades:
 
 ```
 cmd/                    # Entry points da aplicação
-├── migrate/           # Ferramenta de migração de banco
+├── migration-status/  # Utilitário para verificar status das migrações
 config/                # Configurações e variáveis de ambiente
-database/              # Conexão e migrações do banco
+database/              # Conexão e execução de migrações
 handlers/              # Controllers/Handlers HTTP
 ├── auth.go           # Autenticação e autorização
 ├── companies.go      # Gestão de empresas
@@ -24,6 +26,11 @@ handlers/              # Controllers/Handlers HTTP
 ├── performance_reports.go # Core business logic
 └── teams.go          # Gestão de equipes
 middleware/            # Middlewares de autenticação e autorização
+migrations/            # Sistema centralizado de migrações
+├── README.md         # Documentação das migrações
+├── manager.go        # Gerenciador de migrações
+├── sql_migrations.go # Definições SQL das migrações
+└── *.sql            # Arquivos individuais de migração
 models/               # Entidades de domínio e DTOs
 routes/               # Definição de rotas e agrupamentos
 utils/                # Utilitários e helpers
@@ -537,7 +544,89 @@ log.WithFields(logrus.Fields{
 }).Info("Performance report created successfully")
 ```
 
-## 🚀 Execução Local
+## �️ Sistema de Migrações
+
+### Visão Geral
+
+O sistema utiliza um gerenciador de migrações centralizado que garante:
+
+- **Versionamento sequencial** das mudanças no banco
+- **Controle de estado** com tabela `schema_migrations`
+- **Execução transacional** para rollback automático em caso de erro
+- **Documentação completa** de cada migração
+
+### Estrutura das Migrações
+
+```text
+migrations/
+├── README.md                     # Documentação completa
+├── manager.go                    # Gerenciador de migrações
+├── sql_migrations.go             # Definições SQL embeddadas
+├── 001_initial_setup.sql         # Configuração PostgreSQL
+├── 002_create_tables.sql         # Tabelas principais
+├── 003_create_indexes.sql        # Índices de performance
+├── 004_create_triggers.sql       # Triggers para timestamps
+├── 005_multitenant_implementation.sql # Sistema multitenant
+└── 006_data_migration_multitenant.sql # Migração de dados
+```
+
+### Execução Automática
+
+As migrações são executadas **automaticamente** quando a aplicação inicia:
+
+```bash
+# Executar aplicação (migrações automáticas)
+go run main.go
+
+# Verificar status das migrações
+go run cmd/migration-status/main.go
+```
+
+### Exemplo de Output
+
+```text
+📊 Verificando status das migrações...
+
+ID                              Descrição                           Status        Data
+---                             ----------                          ------        ----
+001_initial_setup               Configuração inicial PostgreSQL    ✅ Aplicada   2025-08-05 10:30:15
+002_create_tables               Criação das tabelas principais      ✅ Aplicada   2025-08-05 10:30:16
+003_create_indexes              Criação de índices para performance ✅ Aplicada   2025-08-05 10:30:17
+004_create_triggers             Configuração de triggers            ✅ Aplicada   2025-08-05 10:30:18
+005_multitenant_implementation  Implementação do sistema multitenant ⏳ Pendente  -
+006_data_migration_multitenant  Migração de dados para multitenancy  ⏳ Pendente  -
+
+📈 Resumo das Migrações:
+   • Total: 6
+   • Aplicadas: 4
+   • Pendentes: 2
+```
+
+### Criando Nova Migração
+
+1. **Adicionar arquivo SQL** na pasta `migrations/`
+2. **Atualizar `sql_migrations.go`** com a nova constante
+3. **Adicionar à lista** em `manager.go` no método `GetAllMigrations()`
+4. **Documentar** no `README.md` das migrações
+
+Exemplo:
+
+```go
+// Em sql_migrations.go
+const migration007SQL = `
+-- Sua nova migração aqui
+ALTER TABLE users ADD COLUMN last_login TIMESTAMP;
+`
+
+// Em manager.go
+{
+    ID:          "007_add_last_login",
+    Description: "Adicionar campo last_login na tabela users",
+    SQL:         migration007SQL,
+},
+```
+
+## �🚀 Execução Local
 
 ### Desenvolvimento
 
@@ -545,7 +634,7 @@ log.WithFields(logrus.Fields{
 # Instalar dependências
 go mod download
 
-# Executar aplicação
+# Executar aplicação (migrações automáticas)
 go run main.go
 
 # Executar com hot reload (air)

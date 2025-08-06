@@ -5,6 +5,7 @@ import (
 	"log"
 
 	"tivix-performance-tracker-backend/config"
+	"tivix-performance-tracker-backend/migrations"
 
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
@@ -32,157 +33,15 @@ func Connect() {
 }
 
 func Migrate() {
-	createTablesQueries := []string{
-		`CREATE EXTENSION IF NOT EXISTS "uuid-ossp";`,
-
-		`CREATE TABLE IF NOT EXISTS companies (
-			id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-			name VARCHAR(255) NOT NULL,
-			description TEXT,
-			is_active BOOLEAN NOT NULL DEFAULT true,
-			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-		);`,
-
-		`CREATE TABLE IF NOT EXISTS users (
-			id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-			email VARCHAR(255) NOT NULL UNIQUE,
-			password VARCHAR(255) NOT NULL,
-			name VARCHAR(255) NOT NULL,
-			role VARCHAR(50) NOT NULL DEFAULT 'user' CHECK (role IN ('admin', 'manager', 'user')),
-			company_id UUID REFERENCES companies(id) ON DELETE SET NULL,
-			needs_password_change BOOLEAN NOT NULL DEFAULT false,
-			is_active BOOLEAN NOT NULL DEFAULT true,
-			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-		);`,
-
-		`CREATE TABLE IF NOT EXISTS teams (
-			id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-			name VARCHAR(255) NOT NULL,
-			description TEXT,
-			color VARCHAR(50) DEFAULT 'blue',
-			company_id UUID REFERENCES companies(id) ON DELETE CASCADE,
-			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-		);`,
-
-		`CREATE TABLE IF NOT EXISTS developers (
-			id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-			name VARCHAR(255) NOT NULL,
-			role VARCHAR(255) NOT NULL,
-			latest_performance_score DECIMAL(4,2) DEFAULT 0.00,
-			team_id UUID REFERENCES teams(id) ON DELETE SET NULL,
-			company_id UUID REFERENCES companies(id) ON DELETE CASCADE,
-			archived_at TIMESTAMP NULL,
-			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-		);`,
-
-		`CREATE TABLE IF NOT EXISTS performance_reports (
-			id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-			developer_id UUID NOT NULL REFERENCES developers(id) ON DELETE CASCADE,
-			month VARCHAR(7) NOT NULL, -- Formato YYYY-MM
-			question_scores JSONB NOT NULL,
-			category_scores JSONB NOT NULL,
-			weighted_average_score DECIMAL(4,2) NOT NULL,
-			highlights TEXT,
-			points_to_develop TEXT,
-			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-		);`,
-
-		`CREATE INDEX IF NOT EXISTS idx_companies_name ON companies(name);`,
-		`CREATE INDEX IF NOT EXISTS idx_companies_is_active ON companies(is_active);`,
-		`CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);`,
-		`CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);`,
-		`CREATE INDEX IF NOT EXISTS idx_users_is_active ON users(is_active);`,
-		`CREATE INDEX IF NOT EXISTS idx_users_company_id ON users(company_id);`,
-		`CREATE INDEX IF NOT EXISTS idx_teams_company_id ON teams(company_id);`,
-		`CREATE INDEX IF NOT EXISTS idx_developers_team_id ON developers(team_id);`,
-		`CREATE INDEX IF NOT EXISTS idx_developers_company_id ON developers(company_id);`,
-		`CREATE INDEX IF NOT EXISTS idx_developers_archived_at ON developers(archived_at);`,
-		`CREATE INDEX IF NOT EXISTS idx_performance_reports_developer_id ON performance_reports(developer_id);`,
-		`CREATE INDEX IF NOT EXISTS idx_performance_reports_month ON performance_reports(month);`,
-		`CREATE INDEX IF NOT EXISTS idx_performance_reports_developer_month ON performance_reports(developer_id, month);`,
-
-		`CREATE OR REPLACE FUNCTION update_updated_at_column()
-		RETURNS TRIGGER AS $$
-		BEGIN
-			NEW.updated_at = CURRENT_TIMESTAMP;
-			RETURN NEW;
-		END;
-		$$ language 'plpgsql';`,
-
-		`DROP TRIGGER IF EXISTS update_companies_updated_at ON companies;
-		CREATE TRIGGER update_companies_updated_at
-			BEFORE UPDATE ON companies
-			FOR EACH ROW
-			EXECUTE FUNCTION update_updated_at_column();`,
-
-		`DROP TRIGGER IF EXISTS update_users_updated_at ON users;
-		CREATE TRIGGER update_users_updated_at
-			BEFORE UPDATE ON users
-			FOR EACH ROW
-			EXECUTE FUNCTION update_updated_at_column();`,
-
-		`DROP TRIGGER IF EXISTS update_teams_updated_at ON teams;
-		CREATE TRIGGER update_teams_updated_at
-			BEFORE UPDATE ON teams
-			FOR EACH ROW
-			EXECUTE FUNCTION update_updated_at_column();`,
-
-		`DROP TRIGGER IF EXISTS update_developers_updated_at ON developers;
-		CREATE TRIGGER update_developers_updated_at
-			BEFORE UPDATE ON developers
-			FOR EACH ROW
-			EXECUTE FUNCTION update_updated_at_column();`,
-
-		`DROP TRIGGER IF EXISTS update_performance_reports_updated_at ON performance_reports;
-		CREATE TRIGGER update_performance_reports_updated_at
-			BEFORE UPDATE ON performance_reports
-			FOR EACH ROW
-			EXECUTE FUNCTION update_updated_at_column();`,
+	// Usar o novo sistema de migrações centralizado
+	migrationManager := migrations.NewMigrationManager(DB.DB)
+	
+	log.Println("🔄 Iniciando sistema de migrações centralizado...")
+	
+	if err := migrationManager.RunMigrations(); err != nil {
+		log.Printf("❌ Erro nas migrações: %v", err)
+		return
 	}
-
-	for _, query := range createTablesQueries {
-		if _, err := DB.Exec(query); err != nil {
-			log.Printf("Migration error: %v", err)
-			log.Printf("Query: %s", query)
-		}
-	}
-
-	log.Println("✅ Database migrations completed")
-
-	// Execute additional migrations for existing databases
-	additionalMigrations := []string{
-		// Step 1: Add company_id columns as nullable first
-		`ALTER TABLE users ADD COLUMN IF NOT EXISTS company_id UUID REFERENCES companies(id) ON DELETE SET NULL;`,
-		`ALTER TABLE teams ADD COLUMN IF NOT EXISTS company_id UUID REFERENCES companies(id) ON DELETE CASCADE;`,
-		`ALTER TABLE developers ADD COLUMN IF NOT EXISTS company_id UUID REFERENCES companies(id) ON DELETE CASCADE;`,
-		
-		// Step 2: Insert default company if it doesn't exist
-		`INSERT INTO companies (name, description, is_active, created_at, updated_at) 
-			 SELECT 'Valiant Group', 'Empresa padrão do sistema', true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-			 WHERE NOT EXISTS (SELECT 1 FROM companies WHERE name = 'Valiant Group');`,
-		
-		// Step 3: Update existing records to link to Valiant Group
-		`UPDATE users SET company_id = (SELECT id FROM companies WHERE name = 'Valiant Group' LIMIT 1) WHERE company_id IS NULL;`,
-		`UPDATE teams SET company_id = (SELECT id FROM companies WHERE name = 'Valiant Group' LIMIT 1) WHERE company_id IS NULL;`,
-		`UPDATE developers SET company_id = (SELECT id FROM companies WHERE name = 'Valiant Group' LIMIT 1) WHERE company_id IS NULL;`,
-		
-		// Step 4: Create indexes
-		`CREATE INDEX IF NOT EXISTS idx_users_company_id ON users(company_id);`,
-		`CREATE INDEX IF NOT EXISTS idx_teams_company_id ON teams(company_id);`,
-		`CREATE INDEX IF NOT EXISTS idx_developers_company_id ON developers(company_id);`,
-	}
-
-	for _, query := range additionalMigrations {
-		if _, err := DB.Exec(query); err != nil {
-			log.Printf("Additional migration error: %v\n", err)
-			log.Printf("Query: %s\n", query)
-		}
-	}
-
-	log.Println("✅ Existing database migration completed")
+	
+	log.Println("✅ Sistema de migrações concluído com sucesso")
 }

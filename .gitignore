@@ -246,3 +246,21 @@ front-end/*.opt
 # ==============================================================================
 # Nginx logs
 nginx/*.log
+
+
+# ==============================================================================
+# MIGRATIONS
+# ==============================================================================
+# Arquivos temporários gerados durante desenvolvimento
+*.tmp
+*.temp
+
+# Backups de banco de dados
+*.sql.bak
+backup_*.sql
+
+# Logs de migração
+migration_*.log
+
+# Não ignorar os arquivos SQL das migrações
+!*.sql

@@ -19,8 +19,16 @@ const ProtectedRoute = ({ children, requiredRole }) => {
     const { role } = payload;
 
     if (requiredRole) {
-      if (role !== requiredRole && role !== "admin") {
-        return <Navigate to="/unauthorized" replace />;
+      // Se requiredRole é um array, verifica se o role do usuário está no array
+      if (Array.isArray(requiredRole)) {
+        if (!requiredRole.includes(role) && role !== "admin") {
+          return <Navigate to="/unauthorized" replace />;
+        }
+      } else {
+        // Se requiredRole é uma string, mantém a verificação original
+        if (role !== requiredRole && role !== "admin") {
+          return <Navigate to="/unauthorized" replace />;
+        }
       }
     }
 

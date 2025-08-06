@@ -1,113 +1,193 @@
-import { useState, useEffect } from 'react';
-import { 
-  Container,
-  Title,
-  Card,
-  Button,
+import React, { useState, useEffect } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import {
   Table,
-  Badge,
-  Group,
-  Modal,
-  TextInput,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
   Select,
-  Stack,
-  Text,
-  Alert,
-  ActionIcon,
-  Tooltip
-} from '@mantine/core';
-import { 
-  IconUserPlus, 
-  IconCopy, 
-  IconEye, 
-  IconEyeOff,
-  IconCheck,
-  IconAlertCircle,
-  IconRefresh
-} from '@tabler/icons-react';
-import { notifications } from '@mantine/notifications';
-import useAppStore from '../store/useAppStore';
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Plus,
+  Edit2,
+  Eye,
+  EyeOff,
+  Copy,
+  RefreshCw,
+  Users,
+  Building,
+  AlertTriangle,
+  Trash2,
+} from "lucide-react";
+import useAppStore from "@/store/useAppStore";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { toast } from "sonner";
 
 const UserManagement = () => {
-  const [opened, setOpened] = useState(false);
+  const {
+    user,
+    users,
+    companies,
+    fetchUsers,
+    fetchCompanies,
+    createUser,
+    updateUser,
+    deleteUser,
+  } = useAppStore();
+
+  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [editingUser, setEditingUser] = useState(null);
+  const [userToDelete, setUserToDelete] = useState(null);
   const [loading, setLoading] = useState(false);
   const [loadingUsers, setLoadingUsers] = useState(true);
-  const [newUserData, setNewUserData] = useState({
-    name: '',
-    email: '',
-    role: 'user'
-  });
+  const [error, setError] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [generatedPassword, setGeneratedPassword] = useState('');
+  const [generatedPassword, setGeneratedPassword] = useState("");
 
-  const { createUser, fetchUsers, user, users } = useAppStore();
+  const [formData, setFormData] = useState({
+    name: "",
+    email: "",
+    role: "user",
+    companyId: "",
+  });
 
-  // Carregar usuários quando o componente montar
+  // Carregar dados iniciais
   useEffect(() => {
-    if (user?.role === 'admin') {
+    const loadData = async () => {
       setLoadingUsers(true);
-      fetchUsers()
-        .catch(error => {
-          notifications.show({
-            title: 'Erro ao carregar usuários',
-            message: error.message,
-            color: 'red'
-          });
-        })
-        .finally(() => {
-          setLoadingUsers(false);
-        });
+      try {
+        const [usersData, companiesData] = await Promise.all([
+          fetchUsers(),
+          fetchCompanies(),
+        ]);
+        console.log("Loaded users:", usersData);
+        console.log("Loaded companies:", companiesData);
+      } catch {
+        setError("Erro ao carregar dados");
+      } finally {
+        setLoadingUsers(false);
+      }
+    };
+
+    if (user?.role === "admin" || user?.role === "manager") {
+      loadData();
     } else {
       setLoadingUsers(false);
     }
-  }, [fetchUsers, user]);
+  }, [user, fetchUsers, fetchCompanies]);
+
+  // Automaticamente definir empresa para managers
+  useEffect(() => {
+    if (user?.role === "manager" && user?.companyId && !formData.companyId) {
+      setFormData((prev) => ({
+        ...prev,
+        companyId: user.companyId,
+      }));
+    }
+  }, [user, formData.companyId]);
 
   const generateRandomPassword = () => {
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%&*';
-    let password = '';
+    const chars =
+      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%&*";
+    let password = "";
     for (let i = 0; i < 12; i++) {
       password += chars.charAt(Math.floor(Math.random() * chars.length));
     }
     return password;
   };
 
-  const handleCreateUser = async () => {
-    if (!newUserData.name || !newUserData.email) {
-      notifications.show({
-        title: 'Erro',
-        message: 'Nome e email são obrigatórios',
-        color: 'red'
-      });
-      return;
-    }
-
-    const tempPassword = generateRandomPassword();
-    setGeneratedPassword(tempPassword);
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setError("");
 
     try {
-      setLoading(true);
-      await createUser({
-        ...newUserData,
-        temporaryPassword: tempPassword
-      });
+      if (editingUser) {
+        // Editar usuário existente
+        await updateUser(editingUser.id, formData);
+        toast.success("Usuário atualizado com sucesso!");
+        setIsEditDialogOpen(false);
+        setEditingUser(null);
+      } else {
+        // Criar novo usuário
+        const tempPassword = generateRandomPassword();
+        setGeneratedPassword(tempPassword);
 
-      notifications.show({
-        title: 'Usuário criado com sucesso!',
-        message: 'Senha temporária gerada. Copie e envie para o usuário.',
-        color: 'green'
-      });
+        await createUser({
+          ...formData,
+          temporaryPassword: tempPassword,
+        });
 
-      // Reset form but keep modal open to show password
-      setNewUserData({ name: '', email: '', role: 'user' });
-      
-      // Recarregar lista de usuários
-      await fetchUsers();
-    } catch (error) {
-      notifications.show({
-        title: 'Erro ao criar usuário',
-        message: error.message,
-        color: 'red'
-      });
+        toast.success("Usuário criado com sucesso!");
+        // Reset form but keep modal open to show password
+        setFormData({ name: "", email: "", role: "user", companyId: "" });
+      }
+    } catch (err) {
+      setError(err.message || "Erro ao salvar usuário");
+      toast.error(err.message || "Erro ao salvar usuário");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleEdit = (userToEdit) => {
+    setEditingUser(userToEdit);
+    setFormData({
+      name: userToEdit.name,
+      email: userToEdit.email,
+      role: userToEdit.role,
+      companyId: userToEdit.companyId || userToEdit.company_id,
+    });
+    setIsEditDialogOpen(true);
+  };
+
+  const handleDeleteClick = (userToDelete) => {
+    setUserToDelete(userToDelete);
+    setIsDeleteDialogOpen(true);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!userToDelete) return;
+
+    setLoading(true);
+    try {
+      await deleteUser(userToDelete.id);
+      toast.success(`Usuário ${userToDelete.name} excluído com sucesso!`);
+      setIsDeleteDialogOpen(false);
+      setUserToDelete(null);
+    } catch (err) {
+      toast.error(err.message || "Erro ao excluir usuário");
     } finally {
       setLoading(false);
     }
@@ -115,277 +195,613 @@ const UserManagement = () => {
 
   const copyToClipboard = (text) => {
     navigator.clipboard.writeText(text);
-    notifications.show({
-      title: 'Copiado!',
-      message: 'Senha copiada para a área de transferência',
-      color: 'blue'
-    });
+    toast.success("Senha copiada para a área de transferência!");
   };
 
   const refreshUsers = async () => {
     setLoadingUsers(true);
     try {
       await fetchUsers();
-      notifications.show({
-        title: 'Lista atualizada!',
-        message: 'Usuários recarregados com sucesso',
-        color: 'green'
-      });
-    } catch (error) {
-      notifications.show({
-        title: 'Erro ao recarregar',
-        message: error.message,
-        color: 'red'
-      });
+      toast.success("Lista de usuários atualizada!");
+    } catch {
+      toast.error("Erro ao recarregar usuários");
     } finally {
       setLoadingUsers(false);
     }
   };
 
+  const resetForm = () => {
+    const defaultCompanyId =
+      user?.role === "manager" && user?.companyId ? user.companyId : "";
+    setFormData({
+      name: "",
+      email: "",
+      role: "user",
+      companyId: defaultCompanyId,
+    });
+    setError("");
+    setEditingUser(null);
+    setGeneratedPassword("");
+    setShowPassword(false);
+  };
+
   const getRoleColor = (role) => {
     switch (role) {
-      case 'admin': return 'red';
-      case 'manager': return 'blue';
-      case 'user': return 'green';
-      default: return 'gray';
+      case "admin":
+        return "destructive";
+      case "manager":
+        return "default";
+      case "user":
+        return "secondary";
+      default:
+        return "outline";
     }
   };
 
   const getRoleLabel = (role) => {
     switch (role) {
-      case 'admin': return 'Administrador';
-      case 'manager': return 'Gerente';
-      case 'user': return 'Usuário';
-      default: return role;
+      case "admin":
+        return "Administrador";
+      case "manager":
+        return "Gerente";
+      case "user":
+        return "Usuário";
+      default:
+        return role;
     }
   };
 
-  const formatDate = (dateString) => {
-    if (!dateString) return 'N/A';
-    return new Intl.DateTimeFormat('pt-BR', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    }).format(new Date(dateString));
+  const getCompanyName = (companyId) => {
+    const company = companies.find((c) => c.id === companyId);
+    return company?.name || "N/A";
   };
 
-  if (user?.role !== 'admin') {
+  const formatDate = (dateString) => {
+    if (!dateString) return "N/A";
+    return new Date(dateString).toLocaleDateString("pt-BR", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+    });
+  };
+
+  // Filtrar empresas baseado na permissão do usuário
+  const availableCompanies = () => {
+    if (user?.role === "admin") {
+      return companies;
+    } else if (user?.role === "manager") {
+      return companies.filter((company) => company.id === user.companyId);
+    }
+    return [];
+  };
+
+  // Filtrar usuários baseado na permissão
+  const filteredUsers = () => {
+    if (user?.role === "admin") {
+      return users;
+    } else if (user?.role === "manager") {
+      return users.filter(
+        (u) => (u.companyId || u.company_id) === user.companyId
+      );
+    }
+    return [];
+  };
+
+  if (!user || (user.role !== "admin" && user.role !== "manager")) {
     return (
-      <Container size="sm" pt={100}>
-        <Alert
-          icon={<IconAlertCircle size={16} />}
-          color="red"
-          title="Acesso Negado"
-        >
-          Apenas administradores podem gerenciar usuários.
+      <div className="container mx-auto py-10">
+        <Alert variant="destructive">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertDescription>
+            Apenas administradores e gerentes podem gerenciar usuários.
+          </AlertDescription>
         </Alert>
-      </Container>
+      </div>
     );
   }
 
   return (
-    <Container size="xl">
-      <Group justify="space-between" mb="xl">
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
         <div>
-          <Title order={2}>Gerenciamento de Usuários</Title>
-          <Text c="dimmed">
-            Gerencie usuários do sistema
-          </Text>
+          <h1 className="text-3xl font-bold tracking-tight">
+            Gerenciamento de Usuários
+          </h1>
+          <p className="text-muted-foreground">
+            Gerencie usuários{" "}
+            {user?.role === "manager" ? "da sua empresa" : "do sistema"}
+          </p>
         </div>
-        <Group>
-          <Button 
-            variant="light"
-            leftSection={<IconRefresh size={16} />}
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
             onClick={refreshUsers}
-            loading={loadingUsers}
             disabled={loadingUsers}
           >
+            <RefreshCw
+              className={`h-4 w-4 mr-2 ${loadingUsers ? "animate-spin" : ""}`}
+            />
             Atualizar
           </Button>
-          <Button 
-            leftSection={<IconUserPlus size={16} />}
-            onClick={() => setOpened(true)}
+          <Dialog
+            open={isCreateDialogOpen}
+            onOpenChange={(open) => {
+              setIsCreateDialogOpen(open);
+              if (!open) resetForm();
+            }}
           >
-            Novo Usuário
-          </Button>
-        </Group>
-      </Group>
+            <DialogTrigger asChild>
+              <Button>
+                <Plus className="h-4 w-4 mr-2" />
+                Novo Usuário
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-[500px]">
+              <DialogHeader>
+                <DialogTitle>Criar Novo Usuário</DialogTitle>
+              </DialogHeader>
 
-      <Card shadow="sm" padding="lg" radius="md" withBorder>
-        {loadingUsers ? (
-          <div style={{ textAlign: 'center', padding: '2rem' }}>
-            <Text c="dimmed">Carregando usuários...</Text>
-          </div>
-        ) : (
-          <Table>
-            <Table.Thead>
-              <Table.Tr>
-                <Table.Th>Nome</Table.Th>
-                <Table.Th>Email</Table.Th>
-                <Table.Th>Função</Table.Th>
-                <Table.Th>Status</Table.Th>
-                <Table.Th>Criado em</Table.Th>
-              </Table.Tr>
-            </Table.Thead>
-            <Table.Tbody>
-              {users.map((userItem) => (
-                <Table.Tr key={userItem.id}>
-                  <Table.Td>{userItem.name}</Table.Td>
-                  <Table.Td>{userItem.email}</Table.Td>
-                  <Table.Td>
-                    <Badge color={getRoleColor(userItem.role)}>
-                      {getRoleLabel(userItem.role)}
-                    </Badge>
-                  </Table.Td>
-                  <Table.Td>
-                    {userItem.needsPasswordChange ? (
-                      <Badge color="yellow">Aguardando nova senha</Badge>
-                    ) : userItem.isActive !== false ? (
-                      <Badge color="green">Ativo</Badge>
-                    ) : (
-                      <Badge color="gray">Inativo</Badge>
+              {generatedPassword ? (
+                <div className="space-y-4">
+                  <Alert>
+                    <AlertTriangle className="h-4 w-4" />
+                    <AlertDescription>
+                      Usuário criado com sucesso! Uma senha temporária foi
+                      gerada. O usuário deverá definir uma nova senha no
+                      primeiro login.
+                    </AlertDescription>
+                  </Alert>
+
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-sm">
+                        Senha Temporária
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      <div className="flex items-center gap-2">
+                        <Input
+                          type={showPassword ? "text" : "password"}
+                          value={generatedPassword}
+                          readOnly
+                          className="font-mono"
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setShowPassword(!showPassword)}
+                        >
+                          {showPassword ? (
+                            <EyeOff className="h-4 w-4" />
+                          ) : (
+                            <Eye className="h-4 w-4" />
+                          )}
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => copyToClipboard(generatedPassword)}
+                        >
+                          <Copy className="h-4 w-4" />
+                        </Button>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Copie esta senha e envie para o usuário de forma segura.
+                      </p>
+                    </CardContent>
+                  </Card>
+
+                  <Button
+                    onClick={() => setIsCreateDialogOpen(false)}
+                    className="w-full"
+                  >
+                    Fechar
+                  </Button>
+                </div>
+              ) : (
+                <form onSubmit={handleSubmit} className="space-y-4">
+                  {error && (
+                    <Alert variant="destructive">
+                      <AlertTriangle className="h-4 w-4" />
+                      <AlertDescription>{error}</AlertDescription>
+                    </Alert>
+                  )}
+
+                  <div>
+                    <Label htmlFor="name" className="mb-2 block">
+                      Nome completo *
+                    </Label>
+                    <Input
+                      id="name"
+                      value={formData.name}
+                      onChange={(e) =>
+                        setFormData({ ...formData, name: e.target.value })
+                      }
+                      required
+                      placeholder="Nome do usuário"
+                    />
+                  </div>
+
+                  <div>
+                    <Label htmlFor="email" className="mb-2 block">
+                      Email *
+                    </Label>
+                    <Input
+                      id="email"
+                      type="email"
+                      value={formData.email}
+                      onChange={(e) =>
+                        setFormData({ ...formData, email: e.target.value })
+                      }
+                      required
+                      placeholder="email@empresa.com"
+                    />
+                  </div>
+
+                  {/* Mostrar select de empresa apenas para admin ou quando há mais de uma empresa disponível */}
+                  {(user?.role === "admin" ||
+                    availableCompanies().length > 1) && (
+                    <div>
+                      <Label htmlFor="company" className="mb-2 block">
+                        Empresa *
+                      </Label>
+                      <Select
+                        value={formData.companyId}
+                        onValueChange={(value) =>
+                          setFormData({ ...formData, companyId: value })
+                        }
+                        required
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Selecione uma empresa" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {availableCompanies().map((company) => (
+                            <SelectItem key={company.id} value={company.id}>
+                              {company.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+
+                  {/* Mostrar empresa selecionada quando há apenas uma opção */}
+                  {user?.role === "manager" &&
+                    availableCompanies().length === 1 && (
+                      <div>
+                        <Label className="mb-2 block">Empresa</Label>
+                        <div className="flex items-center gap-2 p-3 border rounded-md bg-muted/50">
+                          <Building className="h-4 w-4 text-muted-foreground" />
+                          <span className="text-sm font-medium">
+                            {availableCompanies()[0]?.name}
+                          </span>
+                        </div>
+                      </div>
                     )}
-                  </Table.Td>
-                  <Table.Td>
-                    <Text size="sm" c="dimmed">
-                      {formatDate(userItem.createdAt)}
-                    </Text>
-                  </Table.Td>
-                </Table.Tr>
-              ))}
-              {users.length === 0 && (
-                <Table.Tr>
-                  <Table.Td colSpan={5} style={{ textAlign: 'center', padding: '2rem' }}>
-                    <Text c="dimmed">Nenhum usuário encontrado</Text>
-                  </Table.Td>
-                </Table.Tr>
+
+                  <div>
+                    <Label htmlFor="role" className="mb-2 block">
+                      Função *
+                    </Label>
+                    <Select
+                      value={formData.role}
+                      onValueChange={(value) =>
+                        setFormData({ ...formData, role: value })
+                      }
+                      required
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Selecione uma função" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="user">Usuário</SelectItem>
+                        <SelectItem value="manager">Gerente</SelectItem>
+                        {user?.role === "admin" && (
+                          <SelectItem value="admin">Administrador</SelectItem>
+                        )}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="flex justify-end gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setIsCreateDialogOpen(false)}
+                      disabled={loading}
+                    >
+                      Cancelar
+                    </Button>
+                    <Button type="submit" disabled={loading}>
+                      {loading ? "Criando..." : "Criar Usuário"}
+                    </Button>
+                  </div>
+                </form>
               )}
-            </Table.Tbody>
-          </Table>
-        )}
+            </DialogContent>
+          </Dialog>
+        </div>
+      </div>
+
+      {error && !isCreateDialogOpen && !isEditDialogOpen && (
+        <Alert variant="destructive">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Users className="h-5 w-5" />
+            Usuários Cadastrados ({filteredUsers().length})
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {loadingUsers ? (
+            <div className="text-center py-8">
+              <p className="text-muted-foreground">Carregando usuários...</p>
+            </div>
+          ) : filteredUsers().length === 0 ? (
+            <div className="text-center py-8">
+              <Users className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+              <p className="text-muted-foreground">Nenhum usuário encontrado</p>
+              <p className="text-sm text-muted-foreground">
+                Clique em "Novo Usuário" para criar o primeiro usuário
+              </p>
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Nome</TableHead>
+                  <TableHead>Email</TableHead>
+                  <TableHead>Empresa</TableHead>
+                  <TableHead>Função</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Criado em</TableHead>
+                  <TableHead className="text-right">Ações</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredUsers().map((userItem) => (
+                  <TableRow key={userItem.id}>
+                    <TableCell className="font-medium">
+                      {userItem.name}
+                    </TableCell>
+                    <TableCell>{userItem.email}</TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <Building className="h-4 w-4 text-muted-foreground" />
+                        {getCompanyName(
+                          userItem.companyId || userItem.company_id
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={getRoleColor(userItem.role)}>
+                        {getRoleLabel(userItem.role)}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      {userItem.needsPasswordChange ? (
+                        <Badge variant="outline" className="text-yellow-600">
+                          Aguardando nova senha
+                        </Badge>
+                      ) : userItem.isActive !== false ? (
+                        <Badge variant="outline" className="text-green-600">
+                          Ativo
+                        </Badge>
+                      ) : (
+                        <Badge variant="secondary">Inativo</Badge>
+                      )}
+                    </TableCell>
+                    <TableCell>{formatDate(userItem.createdAt)}</TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex gap-2 justify-end">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleEdit(userItem)}
+                        >
+                          <Edit2 className="h-4 w-4" />
+                        </Button>
+                        {(user?.role === "admin" || 
+                          (user?.role === "manager" && 
+                           userItem.role !== "admin" && 
+                           userItem.role !== "manager" &&
+                           userItem.id !== user.id)) && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleDeleteClick(userItem)}
+                            className="text-destructive hover:text-destructive"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
       </Card>
 
-      <Modal
-        opened={opened}
-        onClose={() => {
-          setOpened(false);
-          setGeneratedPassword('');
-          setNewUserData({ name: '', email: '', role: 'user' });
+      {/* Dialog de edição */}
+      <Dialog
+        open={isEditDialogOpen}
+        onOpenChange={(open) => {
+          setIsEditDialogOpen(open);
+          if (!open) resetForm();
         }}
-        title="Criar Novo Usuário"
-        size="md"
       >
-        <Stack spacing="md">
-          {generatedPassword ? (
-            <>
-              <Alert
-                icon={<IconCheck size={16} />}
-                color="green"
-                title="Usuário criado com sucesso!"
-              >
-                Uma senha temporária foi gerada. O usuário deverá definir uma nova senha no primeiro login.
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Editar Usuário</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            {error && (
+              <Alert variant="destructive">
+                <AlertTriangle className="h-4 w-4" />
+                <AlertDescription>{error}</AlertDescription>
               </Alert>
+            )}
 
-              <Card padding="md" withBorder>
-                <Group justify="space-between" mb="xs">
-                  <Text fw={500}>Senha Temporária:</Text>
-                  <Group gap="xs">
-                    <Tooltip label={showPassword ? "Ocultar senha" : "Mostrar senha"}>
-                      <ActionIcon 
-                        variant="subtle" 
-                        onClick={() => setShowPassword(!showPassword)}
-                      >
-                        {showPassword ? <IconEyeOff size={16} /> : <IconEye size={16} />}
-                      </ActionIcon>
-                    </Tooltip>
-                    <Tooltip label="Copiar senha">
-                      <ActionIcon 
-                        variant="subtle" 
-                        onClick={() => copyToClipboard(generatedPassword)}
-                      >
-                        <IconCopy size={16} />
-                      </ActionIcon>
-                    </Tooltip>
-                  </Group>
-                </Group>
-                <Text 
-                  ff="monospace" 
-                  size="sm" 
-                  p="sm" 
-                  bg="gray.1" 
-                  style={{ borderRadius: 4 }}
-                >
-                  {showPassword ? generatedPassword : '*'.repeat(generatedPassword.length)}
-                </Text>
-                <Text size="xs" c="dimmed" mt="xs">
-                  Copie esta senha e envie para o usuário de forma segura.
-                </Text>
-              </Card>
-
-              <Button 
-                onClick={() => {
-                  setOpened(false);
-                  setGeneratedPassword('');
-                  setNewUserData({ name: '', email: '', role: 'user' });
-                }}
-                fullWidth
-              >
-                Fechar
-              </Button>
-            </>
-          ) : (
-            <>
-              <TextInput
-                label="Nome completo"
+            <div>
+              <Label htmlFor="edit-name" className="mb-2 block">
+                Nome completo *
+              </Label>
+              <Input
+                id="edit-name"
+                value={formData.name}
+                onChange={(e) =>
+                  setFormData({ ...formData, name: e.target.value })
+                }
+                required
                 placeholder="Nome do usuário"
-                value={newUserData.name}
-                onChange={(e) => setNewUserData(prev => ({ ...prev, name: e.target.value }))}
-                required
               />
+            </div>
 
-              <TextInput
-                label="Email"
-                placeholder="email@tivix.com"
-                value={newUserData.email}
-                onChange={(e) => setNewUserData(prev => ({ ...prev, email: e.target.value }))}
-                required
+            <div>
+              <Label htmlFor="edit-email" className="mb-2 block">
+                Email *
+              </Label>
+              <Input
+                id="edit-email"
                 type="email"
-              />
-
-              <Select
-                label="Função"
-                value={newUserData.role}
-                onChange={(value) => setNewUserData(prev => ({ ...prev, role: value }))}
-                data={[
-                  { value: 'user', label: 'Usuário' },
-                  { value: 'manager', label: 'Gerente' },
-                  { value: 'admin', label: 'Administrador' }
-                ]}
+                value={formData.email}
+                onChange={(e) =>
+                  setFormData({ ...formData, email: e.target.value })
+                }
                 required
+                placeholder="email@empresa.com"
               />
+            </div>
 
-              <Group justify="space-between" mt="md">
-                <Button 
-                  variant="subtle" 
-                  onClick={() => setOpened(false)}
+            {/* Mostrar select de empresa apenas para admin ou quando há mais de uma empresa disponível */}
+            {(user?.role === "admin" || availableCompanies().length > 1) && (
+              <div>
+                <Label htmlFor="edit-company" className="mb-2 block">
+                  Empresa *
+                </Label>
+                <Select
+                  value={formData.companyId}
+                  onValueChange={(value) =>
+                    setFormData({ ...formData, companyId: value })
+                  }
+                  required
                 >
-                  Cancelar
-                </Button>
-                <Button 
-                  onClick={handleCreateUser}
-                  loading={loading}
-                  leftSection={<IconUserPlus size={16} />}
-                >
-                  Criar Usuário
-                </Button>
-              </Group>
-            </>
-          )}
-        </Stack>
-      </Modal>
-    </Container>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione uma empresa" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableCompanies().map((company) => (
+                      <SelectItem key={company.id} value={company.id}>
+                        {company.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {/* Mostrar empresa selecionada quando há apenas uma opção */}
+            {user?.role === "manager" && availableCompanies().length === 1 && (
+              <div>
+                <Label className="mb-2 block">Empresa</Label>
+                <div className="flex items-center gap-2 p-3 border rounded-md bg-muted/50">
+                  <Building className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-sm font-medium">
+                    {availableCompanies()[0]?.name}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            <div>
+              <Label htmlFor="edit-role" className="mb-2 block">
+                Função *
+              </Label>
+              <Select
+                value={formData.role}
+                onValueChange={(value) =>
+                  setFormData({ ...formData, role: value })
+                }
+                required
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione uma função" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="user">Usuário</SelectItem>
+                  <SelectItem value="manager">Gerente</SelectItem>
+                  {user?.role === "admin" && (
+                    <SelectItem value="admin">Administrador</SelectItem>
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setIsEditDialogOpen(false)}
+                disabled={loading}
+              >
+                Cancelar
+              </Button>
+              <Button type="submit" disabled={loading}>
+                {loading ? "Salvando..." : "Salvar Alterações"}
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog de confirmação de exclusão */}
+      <AlertDialog
+        open={isDeleteDialogOpen}
+        onOpenChange={setIsDeleteDialogOpen}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirmar Exclusão</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tem certeza que deseja excluir o usuário <strong>{userToDelete?.name}</strong>?
+              <br />
+              <br />
+              <span className="text-destructive">
+                ⚠️ Esta ação não pode ser desfeita e removerá permanentemente:
+              </span>
+              <ul className="mt-2 ml-4 text-sm text-muted-foreground">
+                <li>• Todos os dados do usuário</li>
+                <li>• Histórico de atividades</li>
+                <li>• Acesso ao sistema</li>
+              </ul>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={loading}>
+              Cancelar
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteConfirm}
+              disabled={loading}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {loading ? "Excluindo..." : "Excluir"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
   );
 };
 

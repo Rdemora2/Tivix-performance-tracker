@@ -12,7 +12,8 @@ const useAppStore = create(
       archivedDevelopers: [],
       teams: [],
       performanceReports: [],
-      users: [], // Lista de usuários (apenas para admin)
+      users: [], // Lista de usuários (para admin e manager)
+      companies: [], // Lista de empresas (apenas para admin)
       darkMode: true,
       loading: false,
       error: null,
@@ -109,7 +110,7 @@ const useAppStore = create(
         }
       },
 
-      // Buscar lista de usuários (Admin apenas)
+      // Buscar lista de usuários (Admin e Manager)
       fetchUsers: async () => {
         try {
           set({ loading: true, error: null });
@@ -118,6 +119,112 @@ const useAppStore = create(
           return response.data;
         } catch (error) {
           console.error("Error fetching users:", error);
+          set({ error: error.message, loading: false });
+          throw error;
+        }
+      },
+
+      // Atualizar usuário
+      updateUser: async (id, userData) => {
+        try {
+          set({ loading: true, error: null });
+          const response = await api.auth.updateUser(id, userData);
+          
+          // Atualizar a lista de usuários
+          const users = get().users.map(user => 
+            user.id === id ? response.data : user
+          );
+          
+          set({ users, loading: false });
+          return response.data;
+        } catch (error) {
+          console.error("Update user error:", error);
+          set({ error: error.message, loading: false });
+          throw error;
+        }
+      },
+
+      // Excluir usuário
+      deleteUser: async (id) => {
+        try {
+          set({ loading: true, error: null });
+          const response = await api.auth.deleteUser(id);
+          
+          // Remover o usuário da lista
+          const users = get().users.filter(user => user.id !== id);
+          
+          set({ users, loading: false });
+          return response.data;
+        } catch (error) {
+          console.error("Delete user error:", error);
+          set({ error: error.message, loading: false });
+          throw error;
+        }
+      },
+
+      // Buscar lista de empresas (Admin apenas)
+      fetchCompanies: async () => {
+        try {
+          set({ loading: true, error: null });
+          const response = await api.companies.getAll();
+          set({ companies: response.data || [], loading: false });
+          return response.data;
+        } catch (error) {
+          console.error("Error fetching companies:", error);
+          set({ error: error.message, loading: false });
+          throw error;
+        }
+      },
+
+      // Criar empresa
+      createCompany: async (companyData) => {
+        try {
+          set({ loading: true, error: null });
+          const response = await api.companies.create(companyData);
+          
+          // Adicionar à lista de empresas
+          const companies = [...get().companies, response.data];
+          set({ companies, loading: false });
+          
+          return response.data;
+        } catch (error) {
+          console.error("Create company error:", error);
+          set({ error: error.message, loading: false });
+          throw error;
+        }
+      },
+
+      // Atualizar empresa
+      updateCompany: async (id, companyData) => {
+        try {
+          set({ loading: true, error: null });
+          const response = await api.companies.update(id, companyData);
+          
+          // Atualizar a lista de empresas
+          const companies = get().companies.map(company => 
+            company.id === id ? response.data : company
+          );
+          
+          set({ companies, loading: false });
+          return response.data;
+        } catch (error) {
+          console.error("Update company error:", error);
+          set({ error: error.message, loading: false });
+          throw error;
+        }
+      },
+
+      // Excluir empresa
+      deleteCompany: async (id) => {
+        try {
+          set({ loading: true, error: null });
+          await api.companies.delete(id);
+          
+          // Remover da lista de empresas
+          const companies = get().companies.filter(company => company.id !== id);
+          set({ companies, loading: false });
+        } catch (error) {
+          console.error("Delete company error:", error);
           set({ error: error.message, loading: false });
           throw error;
         }
@@ -133,6 +240,7 @@ const useAppStore = create(
           teams: [],
           performanceReports: [],
           users: [],
+          companies: [],
         });
       },
 

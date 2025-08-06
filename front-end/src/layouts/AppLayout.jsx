@@ -15,6 +15,7 @@ import {
   IconUser,
   IconChevronDown,
   IconUsers,
+  IconBuilding,
 } from "@tabler/icons-react";
 import { useNavigate } from "react-router-dom";
 import useAppStore from "../store/useAppStore";
@@ -98,6 +99,22 @@ const AppLayout = ({ children }) => {
 
                 <Menu.Dropdown>
                   {user.role === "admin" && (
+                    <>
+                      <Menu.Item
+                        leftSection={<IconBuilding size={14} />}
+                        onClick={() => navigate("/company-management")}
+                      >
+                        Gerenciar Empresas
+                      </Menu.Item>
+                      <Menu.Item
+                        leftSection={<IconUsers size={14} />}
+                        onClick={() => navigate("/user-management")}
+                      >
+                        Gerenciar Usuários
+                      </Menu.Item>
+                    </>
+                  )}
+                  {user.role === "manager" && (
                     <Menu.Item
                       leftSection={<IconUsers size={14} />}
                       onClick={() => navigate("/user-management")}

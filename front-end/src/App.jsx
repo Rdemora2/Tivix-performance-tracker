@@ -8,6 +8,7 @@ import {
 } from "@mantine/core";
 import { Notifications } from "@mantine/notifications";
 import { ModalsProvider } from "@mantine/modals";
+import { Toaster } from "sonner";
 import { useEffect } from "react";
 import { IconAlertCircle } from "@tabler/icons-react";
 import AppLayout from "./layouts/AppLayout";
@@ -21,6 +22,7 @@ import Login from "./pages/Login";
 import InitialSetup from "./pages/InitialSetup";
 import Unauthorized from "./pages/Unauthorized";
 import UserManagement from "./pages/UserManagement";
+import CompanyManagement from "./pages/CompanyManagement";
 import SetNewPassword from "./pages/SetNewPassword";
 import useAppStore from "./store/useAppStore";
 import useInitializeApp from "./hooks/useInitializeApp";
@@ -92,6 +94,7 @@ function App() {
       forceColorScheme={darkMode ? "dark" : "light"}
     >
       <Notifications />
+      <Toaster richColors />
       <ModalsProvider>
         <Routes>
           {/* Public routes */}
@@ -123,8 +126,16 @@ function App() {
                   <Route 
                     path="/user-management" 
                     element={
-                      <ProtectedRoute requiredRole="admin">
+                      <ProtectedRoute requiredRole={["admin", "manager"]}>
                         <UserManagement />
+                      </ProtectedRoute>
+                    } 
+                  />
+                  <Route 
+                    path="/company-management" 
+                    element={
+                      <ProtectedRoute requiredRole="admin">
+                        <CompanyManagement />
                       </ProtectedRoute>
                     } 
                   />

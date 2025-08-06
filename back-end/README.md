@@ -1,229 +1,588 @@
-# Tivix Performance Tracker Backend
+# Backend - Tivix Performance Tracker
 
-Backend em Go com Fiber para o sistema de avaliação de performance da Tivix.
+API REST de alta performance construída em Go com arquitetura escalável para gestão de avaliações de performance de equipes de desenvolvimento.
 
-## 🚀 Tecnologias
+## 🎯 Visão Técnica
 
-- **Go 1.21+** - Linguagem de programação
-- **Fiber v2** - Framework web rápido e expressivo
-- **PostgreSQL** - Banco de dados relacional
-- **UUID** - Identificadores únicos
-- **CORS** - Cross-Origin Resource Sharing
-- **JWT** - Autenticação baseada em tokens
-- **bcrypt** - Hash seguro de senhas
-- **SQLx** - Driver SQL extendido para Go
+Esta API representa uma implementação moderna de microserviços em Go, utilizando o framework Fiber para máxima performance e PostgreSQL como banco de dados principal. A arquitetura foi projetada para suportar cargas elevadas, múltiplas empresas e diferentes níveis de acesso com segurança enterprise-grade.
 
-## 🔐 Sistema de Autenticação
+## 🏗️ Arquitetura de Software
 
-O sistema inclui autenticação completa baseada em JWT com três níveis de permissão:
+### Padrão Arquitetural
 
-- **Admin**: Acesso completo (CRUD em todos os recursos)
-- **Manager**: Pode criar/editar desenvolvedores, times e relatórios
-- **User**: Apenas visualização
+A aplicação segue o padrão **Clean Architecture** com separação clara de responsabilidades:
 
-### Inicialização do Sistema
+```
+cmd/                    # Entry points da aplicação
+├── migrate/           # Ferramenta de migração de banco
+config/                # Configurações e variáveis de ambiente
+database/              # Conexão e migrações do banco
+handlers/              # Controllers/Handlers HTTP
+├── auth.go           # Autenticação e autorização
+├── companies.go      # Gestão de empresas
+├── developers.go     # CRUD de desenvolvedores
+├── performance_reports.go # Core business logic
+└── teams.go          # Gestão de equipes
+middleware/            # Middlewares de autenticação e autorização
+models/               # Entidades de domínio e DTOs
+routes/               # Definição de rotas e agrupamentos
+utils/                # Utilitários e helpers
+```
 
-1. **Verificar se o sistema foi inicializado**: `GET /api/v1/init/check`
-2. **Criar primeiro usuário admin**: `POST /api/v1/init/admin` (requer chave de instalação)
+### Padrões de Design Implementados
 
-### Endpoints de Autenticação
+- **Repository Pattern**: Abstração da camada de dados
+- **Middleware Pattern**: Cross-cutting concerns (auth, logging, CORS)
+- **DTO Pattern**: Data Transfer Objects para API contracts
+- **Factory Pattern**: Criação de objetos complexos
+- **Dependency Injection**: Inversão de controle para testabilidade
 
-- `POST /api/v1/auth/register` - Cadastro de usuário
-- `POST /api/v1/auth/login` - Login
-- `GET /api/v1/auth/profile` - Perfil do usuário (protegido)
-- `POST /api/v1/auth/refresh` - Renovar token (protegido)
+## 🛠️ Stack Tecnológica Detalhada
 
-📖 **Documentação completa de integração**: Ver `FRONTEND_INTEGRATION.md`
+### Core Framework
 
-## 📋 Pré-requisitos
+- **Go 1.24**: Linguagem de alta performance com garbage collector otimizado
+- **Fiber v2**: Framework web inspirado no Express.js, extremamente rápido
+- **SQLX**: Driver PostgreSQL com suporte a SQL raw e mapeamento automático
 
-- Go 1.21 ou superior
-- PostgreSQL
-- Arquivo `.env` configurado (localizado na raiz do projeto)
+### Banco de Dados
 
-## 🛠️ Instalação
+- **PostgreSQL 15+**: RDBMS robusto com suporte JSONB nativo
+- **UUID Extensions**: Identificadores únicos universais
+- **JSONB**: Armazenamento flexível para dados semi-estruturados
 
-1. **Instalar dependências**:
+### Segurança e Autenticação
+
+- **JWT (golang-jwt/jwt/v5)**: Tokens stateless com refresh automático
+- **bcrypt**: Hash de senhas com salt automático
+- **CORS**: Configuração granular de Cross-Origin Resource Sharing
+
+### Validação e Configuração
+
+- **go-playground/validator**: Validação estrutural de dados
+- **godotenv**: Gerenciamento de variáveis de ambiente
+- **UUID (google/uuid)**: Geração e manipulação de identificadores únicos
+
+## 🗄️ Modelagem de Dados
+
+### Esquema Relacional
+
+```sql
+-- Empresas (Multi-tenancy)
+companies (
+  id UUID PRIMARY KEY,
+  name VARCHAR(255) NOT NULL,
+  description TEXT,
+  is_active BOOLEAN DEFAULT true,
+  created_at, updated_at TIMESTAMP
+);
+
+-- Usuários com RBAC
+users (
+  id UUID PRIMARY KEY,
+  email VARCHAR(255) UNIQUE NOT NULL,
+  password VARCHAR(255) NOT NULL,
+  name VARCHAR(255) NOT NULL,
+  role ENUM('admin', 'manager', 'user'),
+  company_id UUID REFERENCES companies(id),
+  needs_password_change BOOLEAN DEFAULT false,
+  is_active BOOLEAN DEFAULT true,
+  created_at, updated_at TIMESTAMP
+);
+
+-- Equipes organizacionais
+teams (
+  id UUID PRIMARY KEY,
+  name VARCHAR(255) NOT NULL,
+  description TEXT,
+  color VARCHAR(50) DEFAULT 'blue',
+  company_id UUID REFERENCES companies(id),
+  created_at, updated_at TIMESTAMP
+);
+
+-- Desenvolvedores
+developers (
+  id UUID PRIMARY KEY,
+  name VARCHAR(255) NOT NULL,
+  role VARCHAR(255) NOT NULL,
+  latest_performance_score DECIMAL(4,2) DEFAULT 0.00,
+  team_id UUID REFERENCES teams(id),
+  company_id UUID REFERENCES companies(id),
+  archived_at TIMESTAMP NULL,
+  created_at, updated_at TIMESTAMP
+);
+
+-- Relatórios de Performance (Core Business)
+performance_reports (
+  id UUID PRIMARY KEY,
+  developer_id UUID REFERENCES developers(id),
+  month VARCHAR(7) NOT NULL, -- YYYY-MM format
+  question_scores JSONB NOT NULL,
+  category_scores JSONB NOT NULL,
+  weighted_average_score DECIMAL(4,2) NOT NULL,
+  highlights TEXT,
+  points_to_develop TEXT,
+  created_at, updated_at TIMESTAMP
+);
+```
+
+### Índices de Performance
+
+```sql
+-- Índices estratégicos para queries frequentes
+CREATE INDEX idx_performance_reports_month ON performance_reports(month);
+CREATE INDEX idx_performance_reports_developer ON performance_reports(developer_id);
+CREATE INDEX idx_performance_reports_score ON performance_reports(weighted_average_score);
+CREATE INDEX idx_developers_company ON developers(company_id);
+CREATE INDEX idx_users_company_role ON users(company_id, role);
+```
+
+## 🔒 Sistema de Segurança
+
+### Autenticação JWT
+
+```go
+// Estrutura do JWT Claims
+type JWTClaims struct {
+    UserID    uuid.UUID  `json:"user_id"`
+    Email     string     `json:"email"`
+    Role      string     `json:"role"`
+    CompanyID *uuid.UUID `json:"company_id,omitempty"`
+    jwt.RegisteredClaims
+}
+
+// Middleware de autenticação com refresh automático
+func AuthMiddleware() fiber.Handler {
+    return func(c *fiber.Ctx) error {
+        token := extractToken(c)
+        claims, err := validateJWT(token)
+        if err != nil {
+            return c.Status(401).JSON(fiber.Map{
+                "error": "Invalid or expired token",
+            })
+        }
+        c.Locals("user", claims)
+        return c.Next()
+    }
+}
+```
+
+### Controle de Acesso Baseado em Papéis (RBAC)
+
+```go
+// Níveis de permissão hierárquicos
+const (
+    RoleAdmin   = "admin"    // Acesso total ao sistema
+    RoleManager = "manager"  // Gestão dentro da empresa
+    RoleUser    = "user"     // Acesso limitado de visualização da empresa
+)
+
+// Middleware de autorização por papel
+func AdminOnlyMiddleware() fiber.Handler {
+    return func(c *fiber.Ctx) error {
+        user := c.Locals("user").(*JWTClaims)
+        if user.Role != RoleAdmin {
+            return c.Status(403).JSON(fiber.Map{
+                "error": "Insufficient permissions",
+            })
+        }
+        return c.Next()
+    }
+}
+```
+
+### Multi-tenancy (Isolamento por Empresa)
+
+```go
+// Middleware de isolamento de dados por empresa
+func CompanyAccessMiddleware() fiber.Handler {
+    return func(c *fiber.Ctx) error {
+        user := c.Locals("user").(*JWTClaims)
+
+        // Admins podem acessar qualquer empresa
+        if user.Role == RoleAdmin {
+            return c.Next()
+        }
+
+        // Usuários devem ter empresa associada
+        if user.CompanyID == nil {
+            return c.Status(403).JSON(fiber.Map{
+                "error": "User must be associated with a company",
+            })
+        }
+
+        return c.Next()
+    }
+}
+```
+
+## 🌐 API Design e Endpoints
+
+### Estrutura RESTful
+
+```
+/api/v1/
+├── auth/                          # Autenticação
+│   ├── POST /login               # Login com email/password
+│   ├── GET /profile              # Perfil do usuário logado
+│   ├── POST /refresh             # Refresh do JWT token
+│   └── POST /set-new-password    # Alteração de senha obrigatória
+├── init/                         # Inicialização do sistema
+│   ├── GET /check               # Verificar se sistema foi inicializado
+│   └── POST /admin              # Criar primeiro usuário admin
+├── companies/                    # Gestão de empresas (Admin only)
+│   ├── GET /                    # Listar empresas
+│   ├── POST /                   # Criar empresa
+│   ├── GET /:id                 # Detalhes da empresa
+│   ├── PUT /:id                 # Atualizar empresa
+│   └── DELETE /:id              # Remover empresa
+├── teams/                       # Gestão de equipes
+│   ├── GET /                    # Listar equipes da empresa
+│   ├── POST /                   # Criar equipe
+│   ├── PUT /:id                 # Atualizar equipe
+│   └── DELETE /:id              # Remover equipe
+├── developers/                  # CRUD de desenvolvedores
+│   ├── GET /                    # Listar desenvolvedores
+│   ├── POST /                   # Adicionar desenvolvedor
+│   ├── GET /:id                 # Detalhes do desenvolvedor
+│   ├── PUT /:id                 # Atualizar desenvolvedor
+│   ├── DELETE /:id              # Arquivar desenvolvedor
+│   └── POST /:id/restore        # Restaurar desenvolvedor
+└── performance-reports/         # Core business - Relatórios
+    ├── GET /                    # Listar todos os relatórios
+    ├── POST /                   # Criar novo relatório
+    ├── GET /:id                 # Detalhes de relatório específico
+    ├── GET /developer/:id       # Relatórios por desenvolvedor
+    ├── GET /month/:month        # Relatórios por mês
+    ├── GET /months              # Meses com relatórios disponíveis
+    └── GET /stats               # Estatísticas consolidadas
+```
+
+### Padronização de Responses
+
+```go
+// Resposta de sucesso padrão
+type SuccessResponse struct {
+    Success bool        `json:"success"`
+    Data    interface{} `json:"data"`
+    Message string      `json:"message,omitempty"`
+}
+
+// Resposta de erro padrão
+type ErrorResponse struct {
+    Error   bool   `json:"error"`
+    Message string `json:"message"`
+    Code    string `json:"code,omitempty"`
+}
+```
+
+## 📊 Business Logic - Sistema de Performance
+
+### Algoritmo de Cálculo de Performance
+
+```go
+// Estrutura das categorias de avaliação
+type EvaluationCategory struct {
+    Label     string    `json:"label"`
+    Weight    float64   `json:"weight"`
+    Questions []Question `json:"questions"`
+}
+
+type Question struct {
+    Key    string  `json:"key"`
+    Label  string  `json:"label"`
+    Weight float64 `json:"weight"`
+}
+
+// Categorias definidas no sistema
+var EvaluationCategories = map[string]EvaluationCategory{
+    "commitment": {
+        Label:  "Comprometimento e Disciplina",
+        Weight: 0.3,
+        Questions: []Question{
+            {Key: "punctualityDeliveries", Label: "Pontualidade nas Entregas", Weight: 3},
+            {Key: "punctualityRituals", Label: "Pontualidade em Rituais", Weight: 2},
+            {Key: "hybridModelAdherence", Label: "Adesão ao Modelo Híbrido", Weight: 1},
+        },
+    },
+    "technicalQuality": {
+        Label:  "Qualidade e Execução Técnica",
+        Weight: 0.4,
+        Questions: []Question{
+            {Key: "deliveryQuality", Label: "Qualidade das Entregas", Weight: 4},
+            {Key: "taskAutonomy", Label: "Autonomia na Resolução de Tarefas", Weight: 3},
+        },
+    },
+    "collaboration": {
+        Label:  "Colaboração e Proatividade",
+        Weight: 0.3,
+        Questions: []Question{
+            {Key: "proactivityImprovements", Label: "Proatividade e Sugestão de Melhorias", Weight: 3},
+            {Key: "communicationQuality", Label: "Qualidade da Comunicação", Weight: 2},
+        },
+    },
+}
+```
+
+### Validação e Processamento de Relatórios
+
+```go
+// Handler para criação de relatório de performance
+func CreatePerformanceReport(c *fiber.Ctx) error {
+    var req models.CreatePerformanceReportRequest
+    if err := c.BodyParser(&req); err != nil {
+        return c.Status(400).JSON(ErrorResponse{
+            Error:   true,
+            Message: "Invalid request format",
+        })
+    }
+
+    // Validações de negócio
+    if err := validatePerformanceReport(&req); err != nil {
+        return c.Status(400).JSON(ErrorResponse{
+            Error:   true,
+            Message: err.Error(),
+        })
+    }
+
+    // Verificar duplicidade de relatório no mês
+    if exists := checkExistingReport(req.DeveloperID, req.Month); exists {
+        return c.Status(409).JSON(ErrorResponse{
+            Error:   true,
+            Message: "Report already exists for this month",
+        })
+    }
+
+    // Salvar no banco com transação
+    report, err := savePerformanceReport(&req)
+    if err != nil {
+        return c.Status(500).JSON(ErrorResponse{
+            Error:   true,
+            Message: "Failed to save report",
+        })
+    }
+
+    // Atualizar score mais recente do desenvolvedor
+    updateDeveloperLatestScore(req.DeveloperID, req.WeightedAverageScore)
+
+    return c.Status(201).JSON(SuccessResponse{
+        Success: true,
+        Data:    report,
+        Message: "Performance report created successfully",
+    })
+}
+```
+
+## ⚡ Otimizações de Performance
+
+### Database Query Optimization
+
+```go
+// Query otimizada para relatórios consolidados
+func GetConsolidatedReports(companyID uuid.UUID, month string) ([]PerformanceReport, error) {
+    query := `
+        SELECT
+            pr.id, pr.developer_id, pr.month, pr.question_scores,
+            pr.category_scores, pr.weighted_average_score,
+            pr.highlights, pr.points_to_develop, pr.created_at, pr.updated_at,
+            d.name as developer_name, d.role as developer_role
+        FROM performance_reports pr
+        INNER JOIN developers d ON pr.developer_id = d.id
+        WHERE d.company_id = $1 AND pr.month = $2
+        ORDER BY pr.weighted_average_score DESC, pr.created_at DESC
+    `
+
+    var reports []PerformanceReport
+    err := database.DB.Select(&reports, query, companyID, month)
+    return reports, err
+}
+```
+
+### Connection Pooling e Configurações
+
+```go
+// Configuração otimizada do pool de conexões
+func configureDB(db *sqlx.DB) {
+    db.SetMaxOpenConns(25)                 // Máximo de conexões abertas
+    db.SetMaxIdleConns(5)                  // Conexões idle no pool
+    db.SetConnMaxLifetime(30 * time.Minute) // Tempo de vida da conexão
+    db.SetConnMaxIdleTime(5 * time.Minute)  // Tempo máximo idle
+}
+```
+
+### Middleware de Logging Estruturado
+
+```go
+// Logger configurado para produção
+app.Use(logger.New(logger.Config{
+    Format: "[${time}] ${status} - ${method} ${path} - ${ip} - ${latency}\n",
+    TimeFormat: "2006-01-02 15:04:05",
+    TimeZone: "UTC",
+}))
+```
+
+## 🔧 Configuração e Environment
+
+### Configuration Management
+
+```go
+type Config struct {
+    // Database
+    DBHost     string `env:"DB_HOST" envDefault:"localhost"`
+    DBPort     string `env:"DB_PORT" envDefault:"5432"`
+    DBUser     string `env:"DB_USER" envDefault:"postgres"`
+    DBPassword string `env:"DB_PASSWORD" envDefault:"postgres"`
+    DBName     string `env:"DB_NAME" envDefault:"tivix_performance_tracker"`
+    DBSSLMode  string `env:"DB_SSLMODE" envDefault:"disable"`
+
+    // Server
+    Port        string `env:"PORT" envDefault:"8080"`
+    Host        string `env:"HOST" envDefault:"localhost"`
+    Environment string `env:"ENVIRONMENT" envDefault:"development"`
+
+    // Security
+    JWTSecret  string `env:"JWT_SECRET" envDefault:"change-in-production"`
+    CORSOrigin string `env:"CORS_ORIGIN" envDefault:"http://localhost:5173"`
+}
+```
+
+### Docker Configuration
+
+```dockerfile
+# Multi-stage build para otimização
+FROM golang:1.24-alpine AS builder
+
+WORKDIR /app
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o main .
+
+FROM alpine:latest
+RUN apk --no-cache add ca-certificates
+WORKDIR /root/
+
+COPY --from=builder /app/main .
+EXPOSE 8080
+CMD ["./main"]
+```
+
+## 🚀 Deploy e DevOps
+
+### Health Checks
+
+```go
+// Endpoint de health check com verificações de dependências
+app.Get("/health", func(c *fiber.Ctx) error {
+    // Verificar conexão com banco
+    if err := database.DB.Ping(); err != nil {
+        return c.Status(503).JSON(fiber.Map{
+            "status": "unhealthy",
+            "checks": map[string]string{
+                "database": "failing",
+            },
+        })
+    }
+
+    return c.JSON(fiber.Map{
+        "status": "healthy",
+        "timestamp": time.Now().UTC(),
+        "version": "1.0.0",
+        "checks": map[string]string{
+            "database": "passing",
+        },
+    })
+})
+```
+
+### Graceful Shutdown
+
+```go
+// Implementação de shutdown graceful
+func gracefulShutdown(app *fiber.App) {
+    c := make(chan os.Signal, 1)
+    signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+
+    go func() {
+        <-c
+        log.Println("Gracefully shutting down...")
+        app.Shutdown()
+    }()
+
+    if err := app.Listen(":8080"); err != nil {
+        log.Panic(err)
+    }
+}
+```
+
+## 📈 Monitoramento e Observabilidade
+
+### Métricas de Performance
+
+- **Latência**: P50, P95, P99 de response time
+- **Throughput**: Requests por segundo
+- **Error Rate**: Percentage de erros 4xx/5xx
+- **Database**: Connection pool utilization, query duration
+
+### Structured Logging
+
+```go
+// Log estruturado para observabilidade
+log.WithFields(logrus.Fields{
+    "user_id":    userID,
+    "company_id": companyID,
+    "operation":  "create_performance_report",
+    "duration":   duration,
+}).Info("Performance report created successfully")
+```
+
+## 🚀 Execução Local
+
+### Desenvolvimento
+
 ```bash
-cd backend
+# Instalar dependências
 go mod download
-```
 
-2. **Configurar banco de dados**:
-   - Certifique-se de que o PostgreSQL está rodando
-   - Configure as variáveis de ambiente no arquivo `.env` na raiz do projeto
-   - As migrações são executadas automaticamente na inicialização
-
-3. **Executar o servidor**:
-```bash
+# Executar aplicação
 go run main.go
+
+# Executar com hot reload (air)
+air
 ```
 
-O servidor será iniciado na porta `8080` por padrão.
-
-## 🌐 Endpoints da API
-
-### Times (`/api/v1/teams`)
-
-- `GET /` - Listar todos os times
-- `GET /:id` - Buscar time por ID
-- `POST /` - Criar novo time
-- `PUT /:id` - Atualizar time
-- `DELETE /:id` - Excluir time
-- `GET /:teamId/developers` - Listar desenvolvedores do time
-
-### Desenvolvedores (`/api/v1/developers`)
-
-- `GET /` - Listar todos os desenvolvedores ativos
-- `GET /?includeArchived=true` - Listar incluindo arquivados
-- `GET /archived` - Listar apenas arquivados
-- `GET /:id` - Buscar desenvolvedor por ID
-- `POST /` - Criar novo desenvolvedor
-- `PUT /:id` - Atualizar desenvolvedor
-- `PUT /:id/archive` - Arquivar/restaurar desenvolvedor
-- `GET /:developerId/reports` - Listar relatórios do desenvolvedor
-
-### Relatórios de Performance (`/api/v1/performance-reports`)
-
-- `GET /` - Listar todos os relatórios
-- `GET /:id` - Buscar relatório por ID
-- `POST /` - Criar novo relatório
-- `GET /months` - Listar meses disponíveis
-- `GET /month/:month` - Relatórios de um mês específico
-- `GET /stats` - Estatísticas gerais
-
-## 📊 Estrutura do Banco de Dados
-
-### Tabela `teams`
-- `id` (UUID, PK)
-- `name` (VARCHAR)
-- `description` (TEXT)
-- `color` (VARCHAR)
-- `created_at` (TIMESTAMP)
-- `updated_at` (TIMESTAMP)
-
-### Tabela `developers`
-- `id` (UUID, PK)
-- `name` (VARCHAR)
-- `role` (VARCHAR)
-- `latest_performance_score` (DECIMAL)
-- `team_id` (UUID, FK)
-- `archived_at` (TIMESTAMP, nullable)
-- `created_at` (TIMESTAMP)
-- `updated_at` (TIMESTAMP)
-
-### Tabela `performance_reports`
-- `id` (UUID, PK)
-- `developer_id` (UUID, FK)
-- `month` (VARCHAR) - Formato YYYY-MM
-- `question_scores` (JSONB)
-- `category_scores` (JSONB)
-- `weighted_average_score` (DECIMAL)
-- `highlights` (TEXT)
-- `points_to_develop` (TEXT)
-- `created_at` (TIMESTAMP)
-- `updated_at` (TIMESTAMP)
-
-## 🔧 Variáveis de Ambiente
+### Configuração de Ambiente
 
 ```env
 # Database Configuration
-VITE_DB_HOST=localhost
-VITE_DB_PORT=5433
-VITE_DB_USER=perf_tracker
-VITE_DB_PASSWORD=your_password
-VITE_DB_NAME=performance_tracker_db
+DB_HOST=localhost
+DB_PORT=5432
+DB_USER=postgres
+DB_PASSWORD=postgres
+DB_NAME=db_name
+DB_SSLMODE=disable
 
 # Server Configuration
 PORT=8080
+HOST=localhost
+ENVIRONMENT=development
+
+# Security
+JWT_SECRET=your-secret-key-change-in-production
+CORS_ORIGIN=http://localhost:5173
 ```
 
-## 📝 Exemplo de Uso
-
-### Criar um time
-```bash
-curl -X POST http://localhost:8080/api/v1/teams \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "Frontend Team",
-    "description": "Equipe responsável pelo desenvolvimento frontend",
-    "color": "blue"
-  }'
-```
-
-### Criar um desenvolvedor
-```bash
-curl -X POST http://localhost:8080/api/v1/developers \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "João Silva",
-    "role": "Frontend Developer",
-    "teamId": "uuid-do-time"
-  }'
-```
-
-### Criar um relatório de performance
-```bash
-curl -X POST http://localhost:8080/api/v1/performance-reports \
-  -H "Content-Type: application/json" \
-  -d '{
-    "developerId": "uuid-do-desenvolvedor",
-    "month": "2024-12",
-    "questionScores": {
-      "punctualityDeliveries": 8.5,
-      "deliveryQuality": 9.0
-    },
-    "categoryScores": {
-      "commitment": 8.5,
-      "technicalQuality": 9.0
-    },
-    "weightedAverageScore": 8.7,
-    "highlights": "Excelente qualidade de código",
-    "pointsToDevelop": "Melhorar comunicação em reuniões"
-  }'
-```
-
-## 🏗️ Arquitetura
-
-```
-backend/
-├── main.go              # Ponto de entrada da aplicação
-├── config/             # Configurações
-│   └── config.go
-├── database/           # Conexão e migrações do banco
-│   └── database.go
-├── models/             # Modelos de dados
-│   └── models.go
-├── handlers/           # Handlers HTTP
-│   ├── teams.go
-│   ├── developers.go
-│   └── performance_reports.go
-└── routes/             # Definição de rotas
-    └── routes.go
-```
-
-## 🔒 Recursos de Segurança
-
-- Validação de dados de entrada
-- Tratamento de erros adequado
-- CORS configurado
-- Sanitização de queries SQL (uso de prepared statements)
-
-## 📈 Performance
-
-- Conexão persistente com o banco de dados
-- Índices otimizados para consultas frequentes
-- Logs estruturados para debugging
-
-## 🧪 Testing
-
-Para executar os testes (quando implementados):
-```bash
-go test ./...
-```
-
-## 📦 Build para Produção
+### Build para Produção
 
 ```bash
-go build -o tivix-performance-tracker main.go
+# Build otimizado
+CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o main .
+
+# Ou usando Docker
+docker build -t tivix-backend .
 ```
+
+---
+
+**Esta API representa uma implementação enterprise-grade em Go, priorizando performance, segurança e escalabilidade para ambientes de produção críticos.**

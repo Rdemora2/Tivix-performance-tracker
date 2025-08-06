@@ -9,18 +9,43 @@ import (
 	"github.com/google/uuid"
 
 	"tivix-performance-tracker-backend/database"
+	"tivix-performance-tracker-backend/middleware"
 	"tivix-performance-tracker-backend/models"
 )
 
 // GetAllTeams retorna todos os times
 func GetAllTeams(c *fiber.Ctx) error {
-	query := `
-		SELECT id, name, description, color, created_at, updated_at 
-		FROM teams 
-		ORDER BY created_at DESC
-	`
+	user := c.Locals("user").(*middleware.JWTClaims)
+	
+	var query string
+	var args []interface{}
 
-	rows, err := database.DB.Query(query)
+	if user.Role == "admin" {
+		// Admins podem ver todos os times
+		query = `
+			SELECT id, name, description, color, company_id, created_at, updated_at 
+			FROM teams 
+			ORDER BY created_at DESC
+		`
+	} else {
+		// Managers e usuários só podem ver times da sua empresa
+		if user.CompanyID == nil {
+			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+				"error":   true,
+				"message": "Usuário deve estar associado a uma empresa",
+			})
+		}
+		
+		query = `
+			SELECT id, name, description, color, company_id, created_at, updated_at 
+			FROM teams 
+			WHERE company_id = $1
+			ORDER BY created_at DESC
+		`
+		args = append(args, *user.CompanyID)
+	}
+
+	rows, err := database.DB.Query(query, args...)
 	if err != nil {
 		log.Printf("Error querying teams: %v", err)
 		return c.Status(500).JSON(fiber.Map{
@@ -38,6 +63,7 @@ func GetAllTeams(c *fiber.Ctx) error {
 			&team.Name,
 			&team.Description,
 			&team.Color,
+			&team.CompanyID,
 			&team.CreatedAt,
 			&team.UpdatedAt,
 		)
@@ -56,6 +82,7 @@ func GetAllTeams(c *fiber.Ctx) error {
 
 // GetTeamByID retorna um time específico por ID
 func GetTeamByID(c *fiber.Ctx) error {
+	user := c.Locals("user").(*middleware.JWTClaims)
 	id := c.Params("id")
 	teamUUID, err := uuid.Parse(id)
 	if err != nil {
@@ -66,7 +93,7 @@ func GetTeamByID(c *fiber.Ctx) error {
 	}
 
 	query := `
-		SELECT id, name, description, color, created_at, updated_at 
+		SELECT id, name, description, color, company_id, created_at, updated_at 
 		FROM teams 
 		WHERE id = $1
 	`
@@ -77,6 +104,7 @@ func GetTeamByID(c *fiber.Ctx) error {
 		&team.Name,
 		&team.Description,
 		&team.Color,
+		&team.CompanyID,
 		&team.CreatedAt,
 		&team.UpdatedAt,
 	)
@@ -95,6 +123,16 @@ func GetTeamByID(c *fiber.Ctx) error {
 		})
 	}
 
+	// Verificar se o usuário tem permissão para ver este time
+	if user.Role != "admin" {
+		if user.CompanyID == nil || team.CompanyID == nil || *user.CompanyID != *team.CompanyID {
+			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+				"error":   true,
+				"message": "Sem permissão para acessar este time",
+			})
+		}
+	}
+
 	return c.JSON(fiber.Map{
 		"success": true,
 		"data":    team,
@@ -103,6 +141,8 @@ func GetTeamByID(c *fiber.Ctx) error {
 
 // CreateTeam cria um novo time
 func CreateTeam(c *fiber.Ctx) error {
+	user := c.Locals("user").(*middleware.JWTClaims)
+	
 	var req models.CreateTeamRequest
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(400).JSON(fiber.Map{
@@ -122,18 +162,34 @@ func CreateTeam(c *fiber.Ctx) error {
 		req.Color = "blue"
 	}
 
+	// Determinar a empresa do time
+	var companyID *uuid.UUID
+	if user.Role == "admin" && req.CompanyID != nil {
+		// Admin pode especificar a empresa
+		companyID = req.CompanyID
+	} else if user.CompanyID != nil {
+		// Managers e usuários criam times na sua própria empresa
+		companyID = user.CompanyID
+	} else {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+			"error":   true,
+			"message": "Usuário deve estar associado a uma empresa",
+		})
+	}
+
 	query := `
-		INSERT INTO teams (name, description, color)
-		VALUES ($1, $2, $3)
-		RETURNING id, name, description, color, created_at, updated_at
+		INSERT INTO teams (name, description, color, company_id)
+		VALUES ($1, $2, $3, $4)
+		RETURNING id, name, description, color, company_id, created_at, updated_at
 	`
 
 	var team models.Team
-	err := database.DB.QueryRow(query, req.Name, req.Description, req.Color).Scan(
+	err := database.DB.QueryRow(query, req.Name, req.Description, req.Color, companyID).Scan(
 		&team.ID,
 		&team.Name,
 		&team.Description,
 		&team.Color,
+		&team.CompanyID,
 		&team.CreatedAt,
 		&team.UpdatedAt,
 	)

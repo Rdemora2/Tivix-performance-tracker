@@ -8,20 +8,55 @@ import (
 	"github.com/google/uuid"
 
 	"tivix-performance-tracker-backend/database"
+	"tivix-performance-tracker-backend/middleware"
 	"tivix-performance-tracker-backend/models"
 )
 
 // GetAllPerformanceReports retorna todos os relatórios de performance
 func GetAllPerformanceReports(c *fiber.Ctx) error {
-	query := `
-		SELECT pr.id, pr.developer_id, pr.month, pr.question_scores, pr.category_scores, 
-		       pr.weighted_average_score, pr.highlights, pr.points_to_develop, 
-		       pr.created_at, pr.updated_at
-		FROM performance_reports pr
-		ORDER BY pr.month DESC, pr.created_at DESC
-	`
+	user := c.Locals("user").(*middleware.JWTClaims)
+	
+	var query string
+	var args []interface{}
 
-	rows, err := database.DB.Query(query)
+	if user.Role == "admin" {
+		// Admins podem ver todos os relatórios
+		query = `
+			SELECT pr.id, pr.developer_id, pr.month, pr.question_scores, pr.category_scores, 
+			       pr.weighted_average_score, pr.highlights, pr.points_to_develop, 
+			       pr.created_at, pr.updated_at
+			FROM performance_reports pr
+			ORDER BY pr.month DESC, pr.created_at DESC
+		`
+	} else {
+		// Managers e usuários só podem ver relatórios da sua empresa
+		if user.CompanyID == nil {
+			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+				"error":   true,
+				"message": "Usuário deve estar associado a uma empresa",
+			})
+		}
+		
+		query = `
+			SELECT pr.id, pr.developer_id, pr.month, pr.question_scores, pr.category_scores, 
+			       pr.weighted_average_score, pr.highlights, pr.points_to_develop, 
+			       pr.created_at, pr.updated_at
+			FROM performance_reports pr
+			INNER JOIN developers d ON pr.developer_id = d.id
+			WHERE d.company_id = $1
+			ORDER BY pr.month DESC, pr.created_at DESC
+		`
+		args = append(args, *user.CompanyID)
+	}
+
+	var rows *sql.Rows
+	var err error
+	
+	if len(args) > 0 {
+		rows, err = database.DB.Query(query, args...)
+	} else {
+		rows, err = database.DB.Query(query)
+	}
 	if err != nil {
 		log.Printf("Error querying performance reports: %v", err)
 		return c.Status(500).JSON(fiber.Map{
@@ -120,17 +155,35 @@ func GetPerformanceReportsByDeveloper(c *fiber.Ctx) error {
 // GetPerformanceReportsByMonth retorna relatórios de performance de um mês específico
 func GetPerformanceReportsByMonth(c *fiber.Ctx) error {
 	month := c.Params("month")
+	user := c.Locals("user").(*middleware.JWTClaims)
 
-	query := `
-		SELECT pr.id, pr.developer_id, pr.month, pr.question_scores, pr.category_scores, 
-		       pr.weighted_average_score, pr.highlights, pr.points_to_develop, 
-		       pr.created_at, pr.updated_at
-		FROM performance_reports pr
-		WHERE pr.month = $1
-		ORDER BY pr.weighted_average_score DESC, pr.created_at DESC
-	`
+	var query string
+	var args []interface{}
 
-	rows, err := database.DB.Query(query, month)
+	if user.Role == "admin" {
+		query = `
+			SELECT pr.id, pr.developer_id, pr.month, pr.question_scores, pr.category_scores, 
+			       pr.weighted_average_score, pr.highlights, pr.points_to_develop, 
+			       pr.created_at, pr.updated_at
+			FROM performance_reports pr
+			WHERE pr.month = $1
+			ORDER BY pr.weighted_average_score DESC, pr.created_at DESC
+		`
+		args = []interface{}{month}
+	} else {
+		query = `
+			SELECT pr.id, pr.developer_id, pr.month, pr.question_scores, pr.category_scores, 
+			       pr.weighted_average_score, pr.highlights, pr.points_to_develop, 
+			       pr.created_at, pr.updated_at
+			FROM performance_reports pr
+			JOIN users d ON pr.developer_id = d.id
+			WHERE pr.month = $1 AND d.company_id = $2
+			ORDER BY pr.weighted_average_score DESC, pr.created_at DESC
+		`
+		args = []interface{}{month, user.CompanyID}
+	}
+
+	rows, err := database.DB.Query(query, args...)
 	if err != nil {
 		log.Printf("Error querying performance reports by month: %v", err)
 		return c.Status(500).JSON(fiber.Map{
@@ -342,13 +395,30 @@ func CreatePerformanceReport(c *fiber.Ctx) error {
 
 // GetAvailableMonths retorna os meses disponíveis com relatórios
 func GetAvailableMonths(c *fiber.Ctx) error {
-	query := `
-		SELECT DISTINCT month 
-		FROM performance_reports 
-		ORDER BY month DESC
-	`
+	user := c.Locals("user").(*middleware.JWTClaims)
+	
+	var query string
+	var args []interface{}
 
-	rows, err := database.DB.Query(query)
+	if user.Role == "admin" {
+		query = `
+			SELECT DISTINCT month 
+			FROM performance_reports 
+			ORDER BY month DESC
+		`
+		args = []interface{}{}
+	} else {
+		query = `
+			SELECT DISTINCT pr.month 
+			FROM performance_reports pr
+			JOIN users d ON pr.developer_id = d.id
+			WHERE d.company_id = $1
+			ORDER BY pr.month DESC
+		`
+		args = []interface{}{user.CompanyID}
+	}
+
+	rows, err := database.DB.Query(query, args...)
 	if err != nil {
 		log.Printf("Error querying available months: %v", err)
 		return c.Status(500).JSON(fiber.Map{
@@ -377,14 +447,42 @@ func GetAvailableMonths(c *fiber.Ctx) error {
 
 // GetPerformanceStats retorna estatísticas gerais de performance
 func GetPerformanceStats(c *fiber.Ctx) error {
-	query := `
-		SELECT 
-			COUNT(*) as total_reports,
-			ROUND(AVG(weighted_average_score)::numeric, 2) as average_score,
-			MAX(weighted_average_score) as highest_score,
-			MIN(weighted_average_score) as lowest_score
-		FROM performance_reports
-	`
+	user := c.Locals("user").(*middleware.JWTClaims)
+	
+	var query string
+	var args []interface{}
+
+	if user.Role == "admin" {
+		// Admins podem ver estatísticas de todas as empresas
+		query = `
+			SELECT 
+				COUNT(*) as total_reports,
+				ROUND(AVG(weighted_average_score)::numeric, 2) as average_score,
+				MAX(weighted_average_score) as highest_score,
+				MIN(weighted_average_score) as lowest_score
+			FROM performance_reports
+		`
+	} else {
+		// Managers e usuários só podem ver estatísticas da sua empresa
+		if user.CompanyID == nil {
+			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+				"error":   true,
+				"message": "Usuário deve estar associado a uma empresa",
+			})
+		}
+		
+		query = `
+			SELECT 
+				COUNT(*) as total_reports,
+				ROUND(AVG(pr.weighted_average_score)::numeric, 2) as average_score,
+				MAX(pr.weighted_average_score) as highest_score,
+				MIN(pr.weighted_average_score) as lowest_score
+			FROM performance_reports pr
+			INNER JOIN developers d ON pr.developer_id = d.id
+			WHERE d.company_id = $1
+		`
+		args = append(args, *user.CompanyID)
+	}
 
 	var stats struct {
 		TotalReports  int     `json:"totalReports"`
@@ -393,12 +491,22 @@ func GetPerformanceStats(c *fiber.Ctx) error {
 		LowestScore   float64 `json:"lowestScore"`
 	}
 
-	err := database.DB.QueryRow(query).Scan(
-		&stats.TotalReports,
-		&stats.AverageScore,
-		&stats.HighestScore,
-		&stats.LowestScore,
-	)
+	var err error
+	if len(args) > 0 {
+		err = database.DB.QueryRow(query, args...).Scan(
+			&stats.TotalReports,
+			&stats.AverageScore,
+			&stats.HighestScore,
+			&stats.LowestScore,
+		)
+	} else {
+		err = database.DB.QueryRow(query).Scan(
+			&stats.TotalReports,
+			&stats.AverageScore,
+			&stats.HighestScore,
+			&stats.LowestScore,
+		)
+	}
 
 	if err != nil {
 		log.Printf("Error querying performance stats: %v", err)

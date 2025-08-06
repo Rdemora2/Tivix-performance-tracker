@@ -2,6 +2,8 @@ package handlers
 
 import (
 	"database/sql"
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/go-playground/validator/v10"
@@ -70,10 +72,10 @@ func Register(c *fiber.Ctx) error {
 	}
 
 	query := `
-		INSERT INTO users (id, email, password, name, role, is_active, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		INSERT INTO users (id, email, password, name, role, company_id, is_active, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 	`
-	_, err = database.DB.Exec(query, user.ID, user.Email, user.Password, user.Name, user.Role, user.IsActive, user.CreatedAt, user.UpdatedAt)
+	_, err = database.DB.Exec(query, user.ID, user.Email, user.Password, user.Name, user.Role, user.CompanyID, user.IsActive, user.CreatedAt, user.UpdatedAt)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error":   true,
@@ -217,6 +219,8 @@ func RefreshToken(c *fiber.Ctx) error {
 }
 
 func CreateUser(c *fiber.Ctx) error {
+	user := c.Locals("user").(*middleware.JWTClaims)
+	
 	var req models.CreateUserRequest
 
 	if err := c.BodyParser(&req); err != nil {
@@ -234,6 +238,43 @@ func CreateUser(c *fiber.Ctx) error {
 		})
 	}
 
+	// Verificar regras de empresa
+	var finalCompanyID *uuid.UUID
+	if user.Role == "admin" {
+		// Admin pode especificar qualquer empresa (obrigatório agora)
+		if req.CompanyID == nil {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+				"status":  "error",
+				"message": "Admin deve especificar uma empresa para o usuário",
+			})
+		}
+		finalCompanyID = req.CompanyID
+	} else if user.Role == "manager" {
+		// Manager só pode criar usuários na sua própria empresa
+		if user.CompanyID == nil {
+			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+				"status":  "error",
+				"message": "Manager deve estar associado a uma empresa",
+			})
+		}
+		finalCompanyID = user.CompanyID
+	} else {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+			"status":  "error",
+			"message": "Apenas admins e managers podem criar usuários",
+		})
+	}
+
+	// Verificar se a empresa existe
+	var companyExists bool
+	err := database.DB.Get(&companyExists, "SELECT EXISTS(SELECT 1 FROM companies WHERE id = $1 AND is_active = true)", *finalCompanyID)
+	if err != nil || !companyExists {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"status":  "error",
+			"message": "Empresa não encontrada ou inativa",
+		})
+	}
+
 	if err := utils.ValidatePassword(req.TemporaryPassword); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"status":  "error",
@@ -242,31 +283,32 @@ func CreateUser(c *fiber.Ctx) error {
 	}
 
 	var existingUser models.User
-	err := database.DB.Get(&existingUser, "SELECT id FROM users WHERE email = $1", req.Email)
-	if err == nil {
+	existingUserErr := database.DB.Get(&existingUser, "SELECT id FROM users WHERE email = $1", req.Email)
+	if existingUserErr == nil {
 		return c.Status(fiber.StatusConflict).JSON(fiber.Map{
 			"status":  "error",
 			"message": "Email já está em uso",
 		})
-	} else if err != sql.ErrNoRows {
+	} else if existingUserErr != sql.ErrNoRows {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"status":  "error",
 			"message": "Erro interno do servidor",
 		})
 	}
 
-	user := models.User{
+	newUser := models.User{
 		ID:                  uuid.New(),
 		Email:               req.Email,
 		Name:                req.Name,
 		Role:                req.Role,
+		CompanyID:           finalCompanyID,
 		NeedsPasswordChange: true,
 		IsActive:            true,
 		CreatedAt:           time.Now(),
 		UpdatedAt:           time.Now(),
 	}
 
-	if err := user.HashPassword(req.TemporaryPassword); err != nil {
+	if err := newUser.HashPassword(req.TemporaryPassword); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"status":  "error",
 			"message": "Erro ao processar senha",
@@ -274,10 +316,10 @@ func CreateUser(c *fiber.Ctx) error {
 	}
 
 	query := `
-		INSERT INTO users (id, email, password, name, role, needs_password_change, is_active, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		INSERT INTO users (id, email, password, name, role, company_id, needs_password_change, is_active, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 	`
-	_, err = database.DB.Exec(query, user.ID, user.Email, user.Password, user.Name, user.Role, user.NeedsPasswordChange, user.IsActive, user.CreatedAt, user.UpdatedAt)
+	_, err = database.DB.Exec(query, newUser.ID, newUser.Email, newUser.Password, newUser.Name, newUser.Role, newUser.CompanyID, newUser.NeedsPasswordChange, newUser.IsActive, newUser.CreatedAt, newUser.UpdatedAt)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"status":  "error",
@@ -287,7 +329,7 @@ func CreateUser(c *fiber.Ctx) error {
 
 	return c.Status(fiber.StatusCreated).JSON(fiber.Map{
 		"status": "success",
-		"data":   user,
+		"data":   newUser,
 	})
 }
 
@@ -440,14 +482,38 @@ func ChangePassword(c *fiber.Ctx) error {
 }
 
 func ListUsers(c *fiber.Ctx) error {
+	user := c.Locals("user").(*middleware.JWTClaims)
 	var users []models.User
 
-	query := `
-		SELECT id, email, name, role, needs_password_change, is_active, created_at, updated_at 
-		FROM users 
-		ORDER BY created_at DESC
-	`
-	err := database.DB.Select(&users, query)
+	var query string
+	var args []interface{}
+
+	if user.Role == "admin" {
+		// Admins podem ver todos os usuários
+		query = `
+			SELECT id, email, name, role, company_id, needs_password_change, is_active, created_at, updated_at 
+			FROM users 
+			ORDER BY created_at DESC
+		`
+	} else {
+		// Managers e usuários só podem ver usuários da sua empresa
+		if user.CompanyID == nil {
+			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+				"status":  "error",
+				"message": "Usuário deve estar associado a uma empresa",
+			})
+		}
+		
+		query = `
+			SELECT id, email, name, role, company_id, needs_password_change, is_active, created_at, updated_at 
+			FROM users 
+			WHERE company_id = $1
+			ORDER BY created_at DESC
+		`
+		args = append(args, *user.CompanyID)
+	}
+
+	err := database.DB.Select(&users, query, args...)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"status":  "error",
@@ -458,5 +524,274 @@ func ListUsers(c *fiber.Ctx) error {
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{
 		"status": "success",
 		"data":   users,
+	})
+}
+
+func UpdateUser(c *fiber.Ctx) error {
+	currentUser := c.Locals("user").(*middleware.JWTClaims)
+	id := c.Params("id")
+	userID, err := uuid.Parse(id)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"status":  "error",
+			"message": "ID do usuário inválido",
+		})
+	}
+
+	var req models.UpdateUserRequest
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"status":  "error",
+			"message": "Dados inválidos",
+		})
+	}
+
+	if err := validate.Struct(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"status":  "error",
+			"message": "Dados de entrada inválidos",
+			"details": err.Error(),
+		})
+	}
+
+	// Verificar se o usuário existe e se pode ser editado
+	var existingUser models.User
+	err = database.DB.Get(&existingUser, "SELECT * FROM users WHERE id = $1", userID)
+	if err == sql.ErrNoRows {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"status":  "error",
+			"message": "Usuário não encontrado",
+		})
+	} else if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"status":  "error",
+			"message": "Erro ao buscar usuário",
+		})
+	}
+
+	// Verificar permissões de edição
+	if currentUser.Role != "admin" {
+		// Managers só podem editar usuários da sua própria empresa
+		if currentUser.CompanyID == nil || existingUser.CompanyID == nil || *currentUser.CompanyID != *existingUser.CompanyID {
+			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+				"status":  "error",
+				"message": "Sem permissão para editar este usuário",
+			})
+		}
+		
+		// Managers não podem editar admins
+		if existingUser.Role == "admin" {
+			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+				"status":  "error",
+				"message": "Managers não podem editar administradores",
+			})
+		}
+		
+		// Managers não podem promover usuários a admin
+		if req.Role != nil && *req.Role == "admin" {
+			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+				"status":  "error",
+				"message": "Managers não podem promover usuários a administrador",
+			})
+		}
+	}
+
+	// Construir query de update dinamicamente
+	updates := []string{}
+	args := []interface{}{}
+	argCount := 1
+
+	if req.Name != nil {
+		updates = append(updates, fmt.Sprintf("name = $%d", argCount))
+		args = append(args, *req.Name)
+		argCount++
+	}
+
+	if req.Email != nil {
+		// Verificar se email já existe em outro usuário
+		var emailExists bool
+		err := database.DB.Get(&emailExists, "SELECT EXISTS(SELECT 1 FROM users WHERE email = $1 AND id != $2)", *req.Email, userID)
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+				"status":  "error",
+				"message": "Erro ao verificar email",
+			})
+		}
+		if emailExists {
+			return c.Status(fiber.StatusConflict).JSON(fiber.Map{
+				"status":  "error",
+				"message": "Email já está em uso",
+			})
+		}
+
+		updates = append(updates, fmt.Sprintf("email = $%d", argCount))
+		args = append(args, *req.Email)
+		argCount++
+	}
+
+	if req.Role != nil {
+		updates = append(updates, fmt.Sprintf("role = $%d", argCount))
+		args = append(args, *req.Role)
+		argCount++
+	}
+
+	if req.CompanyID != nil {
+		// Apenas admin pode mudar a empresa do usuário
+		if currentUser.Role != "admin" {
+			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+				"status":  "error",
+				"message": "Apenas administradores podem alterar a empresa do usuário",
+			})
+		}
+
+		// Verificar se a empresa existe
+		var companyExists bool
+		err := database.DB.Get(&companyExists, "SELECT EXISTS(SELECT 1 FROM companies WHERE id = $1 AND is_active = true)", *req.CompanyID)
+		if err != nil || !companyExists {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+				"status":  "error",
+				"message": "Empresa não encontrada ou inativa",
+			})
+		}
+
+		updates = append(updates, fmt.Sprintf("company_id = $%d", argCount))
+		args = append(args, *req.CompanyID)
+		argCount++
+	}
+
+	if req.IsActive != nil {
+		// Apenas admin pode ativar/desativar usuários
+		if currentUser.Role != "admin" {
+			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+				"status":  "error",
+				"message": "Apenas administradores podem ativar/desativar usuários",
+			})
+		}
+
+		updates = append(updates, fmt.Sprintf("is_active = $%d", argCount))
+		args = append(args, *req.IsActive)
+		argCount++
+	}
+
+	if len(updates) == 0 {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"status":  "error",
+			"message": "Nenhum campo foi fornecido para atualização",
+		})
+	}
+
+	// Adicionar updated_at
+	updates = append(updates, fmt.Sprintf("updated_at = $%d", argCount))
+	args = append(args, time.Now())
+	argCount++
+
+	// Adicionar ID para WHERE clause
+	args = append(args, userID)
+
+	query := fmt.Sprintf("UPDATE users SET %s WHERE id = $%d", strings.Join(updates, ", "), argCount)
+	
+	_, err = database.DB.Exec(query, args...)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"status":  "error",
+			"message": "Erro ao atualizar usuário",
+		})
+	}
+
+	// Buscar usuário atualizado
+	var updatedUser models.User
+	err = database.DB.Get(&updatedUser, "SELECT * FROM users WHERE id = $1", userID)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"status":  "error",
+			"message": "Erro ao buscar usuário atualizado",
+		})
+	}
+
+	return c.JSON(fiber.Map{
+		"status": "success",
+		"data":   updatedUser,
+	})
+}
+
+// DeleteUser exclui um usuário
+func DeleteUser(c *fiber.Ctx) error {
+	userID := c.Params("id")
+	userUUID, err := uuid.Parse(userID)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"status":  "error",
+			"message": "ID de usuário inválido",
+		})
+	}
+
+	// Obter usuário atual das claims do JWT
+	currentUser := c.Locals("user").(*middleware.JWTClaims)
+
+	// Buscar o usuário a ser excluído
+	var userToDelete models.User
+	err = database.DB.Get(&userToDelete, "SELECT * FROM users WHERE id = $1", userUUID)
+	if err == sql.ErrNoRows {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"status":  "error",
+			"message": "Usuário não encontrado",
+		})
+	} else if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"status":  "error",
+			"message": "Erro ao buscar usuário",
+		})
+	}
+
+	// Verificar permissões de exclusão
+	if currentUser.Role != "admin" {
+		// Managers só podem excluir usuários da sua própria empresa
+		if currentUser.CompanyID == nil || userToDelete.CompanyID == nil || *currentUser.CompanyID != *userToDelete.CompanyID {
+			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+				"status":  "error",
+				"message": "Sem permissão para excluir este usuário",
+			})
+		}
+		
+		// Managers não podem excluir admins ou outros managers
+		if userToDelete.Role == "admin" || userToDelete.Role == "manager" {
+			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+				"status":  "error",
+				"message": "Sem permissão para excluir administradores ou gerentes",
+			})
+		}
+	}
+
+	// Verificar se o usuário está tentando excluir a si mesmo
+	if currentUser.UserID == userUUID {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"status":  "error",
+			"message": "Você não pode excluir sua própria conta",
+		})
+	}
+
+	// Verificar se existem dados associados ao usuário (se necessário)
+	// Por exemplo, verificar se o usuário criou algum relatório ou outro dado importante
+
+	// Executar a exclusão
+	_, err = database.DB.Exec("DELETE FROM users WHERE id = $1", userUUID)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"status":  "error",
+			"message": "Erro ao excluir usuário",
+		})
+	}
+
+	return c.JSON(fiber.Map{
+		"status":  "success",
+		"message": "Usuário excluído com sucesso",
+		"data": fiber.Map{
+			"deletedUser": fiber.Map{
+				"id":    userToDelete.ID,
+				"name":  userToDelete.Name,
+				"email": userToDelete.Email,
+				"role":  userToDelete.Role,
+			},
+		},
 	})
 }

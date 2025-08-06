@@ -10,26 +10,53 @@ import (
 	"github.com/google/uuid"
 
 	"tivix-performance-tracker-backend/database"
+	"tivix-performance-tracker-backend/middleware"
 	"tivix-performance-tracker-backend/models"
 )
 
 // GetAllDevelopers retorna todos os desenvolvedores
 func GetAllDevelopers(c *fiber.Ctx) error {
+	user := c.Locals("user").(*middleware.JWTClaims)
+	
 	// Verificar se deve incluir arquivados
 	includeArchived := c.Query("includeArchived", "false")
 
-	query := `
-		SELECT id, name, role, latest_performance_score, team_id, archived_at, created_at, updated_at 
-		FROM developers 
-	`
+	var query string
+	var args []interface{}
 
-	if includeArchived != "true" {
-		query += " WHERE archived_at IS NULL"
+	if user.Role == "admin" {
+		// Admins podem ver todos os desenvolvedores
+		query = `
+			SELECT id, name, role, latest_performance_score, team_id, company_id, archived_at, created_at, updated_at 
+			FROM developers 
+		`
+		if includeArchived != "true" {
+			query += " WHERE archived_at IS NULL"
+		}
+	} else {
+		// Managers e usuários só podem ver desenvolvedores da sua empresa
+		if user.CompanyID == nil {
+			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+				"error":   true,
+				"message": "Usuário deve estar associado a uma empresa",
+			})
+		}
+		
+		query = `
+			SELECT id, name, role, latest_performance_score, team_id, company_id, archived_at, created_at, updated_at 
+			FROM developers 
+			WHERE company_id = $1
+		`
+		args = append(args, *user.CompanyID)
+		
+		if includeArchived != "true" {
+			query += " AND archived_at IS NULL"
+		}
 	}
 
 	query += " ORDER BY created_at DESC"
 
-	rows, err := database.DB.Query(query)
+	rows, err := database.DB.Query(query, args...)
 	if err != nil {
 		log.Printf("Error querying developers: %v", err)
 		return c.Status(500).JSON(fiber.Map{
@@ -48,6 +75,7 @@ func GetAllDevelopers(c *fiber.Ctx) error {
 			&developer.Role,
 			&developer.LatestPerformanceScore,
 			&developer.TeamID,
+			&developer.CompanyID,
 			&developer.ArchivedAt,
 			&developer.CreatedAt,
 			&developer.UpdatedAt,
@@ -161,6 +189,8 @@ func GetDeveloperByID(c *fiber.Ctx) error {
 
 // CreateDeveloper cria um novo desenvolvedor
 func CreateDeveloper(c *fiber.Ctx) error {
+	user := c.Locals("user").(*middleware.JWTClaims)
+	
 	var req models.CreateDeveloperRequest
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(400).JSON(fiber.Map{
@@ -183,31 +213,60 @@ func CreateDeveloper(c *fiber.Ctx) error {
 		})
 	}
 
-	// Verificar se o team_id existe (se fornecido)
+	// Determinar a empresa do desenvolvedor
+	var companyID *uuid.UUID
+	if user.Role == "admin" && req.CompanyID != nil {
+		// Admin pode especificar a empresa
+		companyID = req.CompanyID
+	} else if user.CompanyID != nil {
+		// Managers e usuários criam desenvolvedores na sua própria empresa
+		companyID = user.CompanyID
+	} else {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+			"error":   true,
+			"message": "Usuário deve estar associado a uma empresa",
+		})
+	}
+
+	// Verificar se o team_id existe e pertence à mesma empresa (se fornecido)
 	if req.TeamID != nil {
-		var teamExists bool
-		err := database.DB.QueryRow("SELECT EXISTS(SELECT 1 FROM teams WHERE id = $1)", *req.TeamID).Scan(&teamExists)
-		if err != nil || !teamExists {
+		var teamCompanyID *uuid.UUID
+		err := database.DB.QueryRow("SELECT company_id FROM teams WHERE id = $1", *req.TeamID).Scan(&teamCompanyID)
+		if err == sql.ErrNoRows {
 			return c.Status(400).JSON(fiber.Map{
 				"error":   true,
 				"message": "Time não encontrado",
+			})
+		} else if err != nil {
+			return c.Status(500).JSON(fiber.Map{
+				"error":   true,
+				"message": "Erro ao verificar time",
+			})
+		}
+
+		// Verificar se o time pertence à mesma empresa
+		if user.Role != "admin" && (teamCompanyID == nil || companyID == nil || *teamCompanyID != *companyID) {
+			return c.Status(400).JSON(fiber.Map{
+				"error":   true,
+				"message": "Time não pertence à sua empresa",
 			})
 		}
 	}
 
 	query := `
-		INSERT INTO developers (name, role, team_id)
-		VALUES ($1, $2, $3)
-		RETURNING id, name, role, latest_performance_score, team_id, archived_at, created_at, updated_at
+		INSERT INTO developers (name, role, team_id, company_id)
+		VALUES ($1, $2, $3, $4)
+		RETURNING id, name, role, latest_performance_score, team_id, company_id, archived_at, created_at, updated_at
 	`
 
 	var developer models.Developer
-	err := database.DB.QueryRow(query, req.Name, req.Role, req.TeamID).Scan(
+	err := database.DB.QueryRow(query, req.Name, req.Role, req.TeamID, companyID).Scan(
 		&developer.ID,
 		&developer.Name,
 		&developer.Role,
 		&developer.LatestPerformanceScore,
 		&developer.TeamID,
+		&developer.CompanyID,
 		&developer.ArchivedAt,
 		&developer.CreatedAt,
 		&developer.UpdatedAt,
@@ -505,9 +564,12 @@ func DeleteDeveloper(c *fiber.Ctx) error {
 		})
 	}
 
+	// Obter usuário atual das claims do JWT
+	user := c.Locals("user").(*middleware.JWTClaims)
+
 	var existingDeveloper models.Developer
 	checkQuery := `
-		SELECT id, name, role, latest_performance_score, team_id, archived_at, created_at, updated_at 
+		SELECT id, name, role, latest_performance_score, team_id, company_id, archived_at, created_at, updated_at 
 		FROM developers 
 		WHERE id = $1
 	`
@@ -518,6 +580,7 @@ func DeleteDeveloper(c *fiber.Ctx) error {
 		&existingDeveloper.Role,
 		&existingDeveloper.LatestPerformanceScore,
 		&existingDeveloper.TeamID,
+		&existingDeveloper.CompanyID,
 		&existingDeveloper.ArchivedAt,
 		&existingDeveloper.CreatedAt,
 		&existingDeveloper.UpdatedAt,
@@ -535,6 +598,17 @@ func DeleteDeveloper(c *fiber.Ctx) error {
 			"error":   true,
 			"message": "Erro ao verificar desenvolvedor",
 		})
+	}
+
+	// Verificar permissões de exclusão para managers
+	if user.Role != "admin" {
+		// Managers só podem excluir desenvolvedores da sua própria empresa
+		if user.CompanyID == nil || existingDeveloper.CompanyID == nil || *user.CompanyID != *existingDeveloper.CompanyID {
+			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+				"error":   true,
+				"message": "Sem permissão para excluir este desenvolvedor",
+			})
+		}
 	}
 
 	// Inicia uma transação para garantir consistência

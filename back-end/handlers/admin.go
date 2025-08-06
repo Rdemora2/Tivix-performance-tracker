@@ -88,10 +88,10 @@ func CreateAdminUser(c *fiber.Ctx) error {
 	}
 
 	query := `
-		INSERT INTO users (id, email, password, name, role, is_active, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		INSERT INTO users (id, email, password, name, role, company_id, is_active, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 	`
-	_, err = database.DB.Exec(query, user.ID, user.Email, user.Password, user.Name, user.Role, user.IsActive, user.CreatedAt, user.UpdatedAt)
+	_, err = database.DB.Exec(query, user.ID, user.Email, user.Password, user.Name, user.Role, user.CompanyID, user.IsActive, user.CreatedAt, user.UpdatedAt)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error":   true,

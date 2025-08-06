@@ -32,13 +32,23 @@ func (j *JSONB) Scan(value interface{}) error {
 	}
 }
 
-type Team struct {
+type Company struct {
 	ID          uuid.UUID `json:"id" db:"id"`
 	Name        string    `json:"name" db:"name"`
 	Description string    `json:"description" db:"description"`
-	Color       string    `json:"color" db:"color"`
+	IsActive    bool      `json:"isActive" db:"is_active"`
 	CreatedAt   time.Time `json:"createdAt" db:"created_at"`
 	UpdatedAt   time.Time `json:"updatedAt" db:"updated_at"`
+}
+
+type Team struct {
+	ID          uuid.UUID  `json:"id" db:"id"`
+	Name        string     `json:"name" db:"name"`
+	Description string     `json:"description" db:"description"`
+	Color       string     `json:"color" db:"color"`
+	CompanyID   *uuid.UUID `json:"companyId" db:"company_id"`
+	CreatedAt   time.Time  `json:"createdAt" db:"created_at"`
+	UpdatedAt   time.Time  `json:"updatedAt" db:"updated_at"`
 }
 
 type Developer struct {
@@ -47,6 +57,7 @@ type Developer struct {
 	Role                   string     `json:"role" db:"role"`
 	LatestPerformanceScore float64    `json:"latestPerformanceScore" db:"latest_performance_score"`
 	TeamID                 *uuid.UUID `json:"teamId" db:"team_id"`
+	CompanyID              *uuid.UUID `json:"companyId" db:"company_id"`
 	ArchivedAt             *time.Time `json:"archivedAt" db:"archived_at"`
 	CreatedAt              time.Time  `json:"createdAt" db:"created_at"`
 	UpdatedAt              time.Time  `json:"updatedAt" db:"updated_at"`
@@ -66,21 +77,24 @@ type PerformanceReport struct {
 }
 
 type CreateTeamRequest struct {
-	Name        string `json:"name" validate:"required,min=2"`
-	Description string `json:"description"`
-	Color       string `json:"color"`
+	Name        string     `json:"name" validate:"required,min=2"`
+	Description string     `json:"description"`
+	Color       string     `json:"color"`
+	CompanyID   *uuid.UUID `json:"companyId,omitempty"`
 }
 
 type UpdateTeamRequest struct {
-	Name        *string `json:"name,omitempty"`
-	Description *string `json:"description,omitempty"`
-	Color       *string `json:"color,omitempty"`
+	Name        *string    `json:"name,omitempty"`
+	Description *string    `json:"description,omitempty"`
+	Color       *string    `json:"color,omitempty"`
+	CompanyID   *uuid.UUID `json:"companyId,omitempty"`
 }
 
 type CreateDeveloperRequest struct {
-	Name   string     `json:"name" validate:"required,min=2"`
-	Role   string     `json:"role" validate:"required,min=2"`
-	TeamID *uuid.UUID `json:"teamId,omitempty"`
+	Name      string     `json:"name" validate:"required,min=2"`
+	Role      string     `json:"role" validate:"required,min=2"`
+	TeamID    *uuid.UUID `json:"teamId,omitempty"`
+	CompanyID *uuid.UUID `json:"companyId,omitempty"`
 }
 
 type UpdateDeveloperRequest struct {
@@ -88,6 +102,7 @@ type UpdateDeveloperRequest struct {
 	Role                   *string    `json:"role,omitempty"`
 	LatestPerformanceScore *float64   `json:"latestPerformanceScore,omitempty"`
 	TeamID                 *uuid.UUID `json:"teamId,omitempty"`
+	CompanyID              *uuid.UUID `json:"companyId,omitempty"`
 }
 
 type CreatePerformanceReportRequest struct {
@@ -105,15 +120,16 @@ type ArchiveDeveloperRequest struct {
 }
 
 type User struct {
-	ID                  uuid.UUID `json:"id" db:"id"`
-	Email               string    `json:"email" db:"email"`
-	Password            string    `json:"-" db:"password"` // O "-" faz com que este campo não seja serializado no JSON
-	Name                string    `json:"name" db:"name"`
-	Role                string    `json:"role" db:"role"` // admin, manager, user
-	NeedsPasswordChange bool      `json:"needsPasswordChange" db:"needs_password_change"`
-	IsActive            bool      `json:"isActive" db:"is_active"`
-	CreatedAt           time.Time `json:"createdAt" db:"created_at"`
-	UpdatedAt           time.Time `json:"updatedAt" db:"updated_at"`
+	ID                  uuid.UUID  `json:"id" db:"id"`
+	Email               string     `json:"email" db:"email"`
+	Password            string     `json:"-" db:"password"` // O "-" faz com que este campo não seja serializado no JSON
+	Name                string     `json:"name" db:"name"`
+	Role                string     `json:"role" db:"role"` // admin, manager, user
+	CompanyID           *uuid.UUID `json:"companyId" db:"company_id"`
+	NeedsPasswordChange bool       `json:"needsPasswordChange" db:"needs_password_change"`
+	IsActive            bool       `json:"isActive" db:"is_active"`
+	CreatedAt           time.Time  `json:"createdAt" db:"created_at"`
+	UpdatedAt           time.Time  `json:"updatedAt" db:"updated_at"`
 }
 
 func (u *User) HashPassword(password string) error {
@@ -147,25 +163,46 @@ type LoginResponse struct {
 }
 
 type JWTClaims struct {
-	UserID              uuid.UUID `json:"userId"`
-	Email               string    `json:"email"`
-	Role                string    `json:"role"`
-	IsActive            bool      `json:"isActive"`
-	NeedsPasswordChange bool      `json:"needsPasswordChange"`
+	UserID              uuid.UUID  `json:"userId"`
+	Email               string     `json:"email"`
+	Role                string     `json:"role"`
+	CompanyID           *uuid.UUID `json:"companyId"`
+	IsActive            bool       `json:"isActive"`
+	NeedsPasswordChange bool       `json:"needsPasswordChange"`
 }
 
 type CreateUserRequest struct {
-	Name              string `json:"name" validate:"required,min=2"`
-	Email             string `json:"email" validate:"required,email"`
-	Role              string `json:"role" validate:"required,oneof=admin manager user"`
-	TemporaryPassword string `json:"temporaryPassword" validate:"required,min=8"`
+	Name              string     `json:"name" validate:"required,min=2"`
+	Email             string     `json:"email" validate:"required,email"`
+	Role              string     `json:"role" validate:"required,oneof=admin manager user"`
+	CompanyID         *uuid.UUID `json:"companyId" validate:"required"`
+	TemporaryPassword string     `json:"temporaryPassword" validate:"required,min=8"`
+}
+
+type UpdateUserRequest struct {
+	Name      *string    `json:"name,omitempty"`
+	Email     *string    `json:"email,omitempty"`
+	Role      *string    `json:"role,omitempty" validate:"omitempty,oneof=admin manager user"`
+	CompanyID *uuid.UUID `json:"companyId,omitempty"`
+	IsActive  *bool      `json:"isActive,omitempty"`
 }
 
 type SetNewPasswordRequest struct {
 	NewPassword string `json:"newPassword" validate:"required,min=8"`
 }
-
 type ChangePasswordRequest struct {
 	CurrentPassword string `json:"currentPassword" validate:"required"`
 	NewPassword     string `json:"newPassword" validate:"required,min=8"`
+}
+
+type CreateCompanyRequest struct {
+	Name        string `json:"name" validate:"required,min=2"`
+	Description string `json:"description"`
+}
+
+type UpdateCompanyRequest struct {
+	Name        *string `json:"name,omitempty"`
+	Description *string `json:"description,omitempty"`
+	IsActive    *bool   `json:"isActive,omitempty"`
+	NewPassword string  `json:"newPassword" validate:"required,min=8"`
 }

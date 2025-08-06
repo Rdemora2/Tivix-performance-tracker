@@ -14,11 +14,12 @@ import (
 )
 
 type JWTClaims struct {
-	UserID              uuid.UUID `json:"userId"`
-	Email               string    `json:"email"`
-	Role                string    `json:"role"`
-	IsActive            bool      `json:"isActive"`
-	NeedsPasswordChange bool      `json:"needsPasswordChange"`
+	UserID              uuid.UUID  `json:"userId"`
+	Email               string     `json:"email"`
+	Role                string     `json:"role"`
+	CompanyID           *uuid.UUID `json:"companyId"`
+	IsActive            bool       `json:"isActive"`
+	NeedsPasswordChange bool       `json:"needsPasswordChange"`
 	jwt.RegisteredClaims
 }
 
@@ -32,6 +33,7 @@ func GenerateJWT(user models.User) (string, error) {
 		UserID:              user.ID,
 		Email:               user.Email,
 		Role:                user.Role,
+		CompanyID:           user.CompanyID,
 		IsActive:            user.IsActive,
 		NeedsPasswordChange: user.NeedsPasswordChange,
 		RegisteredClaims: jwt.RegisteredClaims{
@@ -157,6 +159,28 @@ func CheckPasswordChangeMiddleware() fiber.Handler {
 			})
 		}
 
+		return c.Next()
+	}
+}
+
+// CompanyAccessMiddleware garante que usuários não-admin só acessem dados de sua própria empresa
+func CompanyAccessMiddleware() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		user := c.Locals("user").(*JWTClaims)
+		
+		// Admins têm acesso a tudo
+		if user.Role == "admin" {
+			return c.Next()
+		}
+		
+		// Usuários com role diferente de admin devem ter uma empresa associada
+		if user.CompanyID == nil {
+			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+				"status":  "error",
+				"message": "Usuário deve estar associado a uma empresa",
+			})
+		}
+		
 		return c.Next()
 	}
 }

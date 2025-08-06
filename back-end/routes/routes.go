@@ -26,13 +26,26 @@ func SetupRoutes(app *fiber.App) {
 	authProtected.Post("/set-new-password", handlers.SetNewPassword)
 	authProtected.Post("/change-password", handlers.ChangePassword)
 
-	// Rotas admin apenas - para gerenciamento de usuários
-	adminAuth := authProtected.Group("/", middleware.AdminOnlyMiddleware())
-	adminAuth.Post("/create-user", handlers.CreateUser)
-	adminAuth.Get("/users", handlers.ListUsers)
+	// Rotas admin e manager - para gerenciamento de usuários e empresas
+	adminAndManagerAuth := authProtected.Group("/", middleware.ManagerOrAdminMiddleware())
+	adminAndManagerAuth.Post("/create-user", handlers.CreateUser)
+	adminAndManagerAuth.Get("/users", handlers.ListUsers)
+	adminAndManagerAuth.Put("/users/:id", handlers.UpdateUser)
+	adminAndManagerAuth.Delete("/users/:id", handlers.DeleteUser)
+	
+	// Rota para listar empresas - gerentes e admins podem acessar
+	companiesListAuth := api.Group("/companies", middleware.AuthMiddleware(), middleware.ManagerOrAdminMiddleware())
+	companiesListAuth.Get("/", handlers.GetAllCompanies)
+	
+	// Rotas admin apenas - para gerenciamento de empresas (diretamente no API, não no auth)
+	companiesAdminAuth := api.Group("/companies", middleware.AuthMiddleware(), middleware.AdminOnlyMiddleware())
+	companiesAdminAuth.Post("/", handlers.CreateCompany)
+	companiesAdminAuth.Get("/:id", handlers.GetCompanyByID)
+	companiesAdminAuth.Put("/:id", handlers.UpdateCompany)
+	companiesAdminAuth.Delete("/:id", handlers.DeleteCompany)
 
-	// Middleware para todas as rotas protegidas - verifica se precisa trocar senha
-	protectedWithPasswordCheck := api.Group("/", middleware.AuthMiddleware(), middleware.CheckPasswordChangeMiddleware())
+	// Middleware para todas as rotas protegidas - verifica se precisa trocar senha e empresa
+	protectedWithPasswordCheck := api.Group("/", middleware.AuthMiddleware(), middleware.CheckPasswordChangeMiddleware(), middleware.CompanyAccessMiddleware())
 
 	// Rotas de times - protegidas
 	teams := protectedWithPasswordCheck.Group("/teams")
@@ -50,7 +63,7 @@ func SetupRoutes(app *fiber.App) {
 	developers.Post("/", middleware.ManagerOrAdminMiddleware(), handlers.CreateDeveloper)
 	developers.Put("/:id", middleware.ManagerOrAdminMiddleware(), handlers.UpdateDeveloper)
 	developers.Put("/:id/archive", middleware.ManagerOrAdminMiddleware(), handlers.ArchiveDeveloper)
-	developers.Delete("/:id", middleware.AdminOnlyMiddleware(), handlers.DeleteDeveloper)
+	developers.Delete("/:id", middleware.ManagerOrAdminMiddleware(), handlers.DeleteDeveloper)
 
 	// Rotas de desenvolvedores por time - protegidas
 	teams.Get("/:teamId/developers", handlers.GetDevelopersByTeam)
